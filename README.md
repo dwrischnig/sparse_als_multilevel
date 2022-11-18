@@ -39,9 +39,11 @@ For more details see `vmc_sampling/README.md`.
 ### Running experiments
 The main procedure is located in `sparse_als.py`.
 To run an approximation of the quantity of interest
+
 $$
     U(y) := \int_{D} u(x,y) \,\mathrm{d}x,
 $$
+
 where $u$ is the solution of the uniform Darcy equation on the domain $D$, execute the following command.
 ```
 source setup
