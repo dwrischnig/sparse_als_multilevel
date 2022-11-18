@@ -1,0 +1,6 @@
+__pycache__
+*.sw[pon]
+*.np[yz]
+micromamba
+.micromamba
+.micromambarc

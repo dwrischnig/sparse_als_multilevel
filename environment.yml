@@ -1,0 +1,12 @@
+name: sparse_als
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.9
+  - numpy
+  - scipy
+  - joblib
+  - matplotlib
+  - scikit-learn
+  - tqdm
+  - rich
