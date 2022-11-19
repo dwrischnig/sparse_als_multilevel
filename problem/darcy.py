@@ -2,8 +2,8 @@ import numpy as np
 from joblib import Parallel, delayed
 
 from .problem import NonnegativeInt, PositiveInt, Problem
-from parametric_pde_sampling.problem.darcy import Problem as _DarcyProblem
-from parametric_pde_sampling.compute_orthogonalization import get_mass_matrix, get_stiffness_matrix, cholesky
+from .parametric_pde_sampling.problem.darcy import Problem as _DarcyProblem
+from .parametric_pde_sampling.compute_orthogonalization import get_mass_matrix, get_stiffness_matrix, cholesky
 
 
 class DarcyProblem(Problem):

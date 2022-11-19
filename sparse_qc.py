@@ -94,6 +94,8 @@ def deparallelise(matrix):
 
 
 def sparse_qc(matrix, minimal=False, precision=1e-8):
+    assert isinstance(matrix, sps.spmatrix)
+    matrix = matrix.tocoo()
     s = np.ones(matrix.nnz, dtype=matrix.dtype)
     k = np.arange(matrix.nnz)
     U = sps.coo_matrix((s, (matrix.row, k)), shape=(matrix.shape[0], matrix.nnz))
