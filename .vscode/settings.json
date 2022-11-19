@@ -5,5 +5,7 @@
         "**/.gitmodules": true,
         "**/.micromamba": true,
         "**/micromamba": true
-    }
+    },
+    "python.condaPath": "${env:CONDA_EXE}",
+    "python.pythonPath": "${env:CONDA_PREFIX}/envs/sparse_als/bin/python"
 }
