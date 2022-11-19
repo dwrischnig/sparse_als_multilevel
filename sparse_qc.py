@@ -6,6 +6,7 @@ from functools import wraps
 
 import scipy.sparse as sps
 import numpy as np
+from numba import jit
 
 import autoPDB
 
@@ -21,14 +22,13 @@ def fold_all(generator: Iterator[bool]):
 def isqpm(matrix, orthogonal=False):
     """Check whether the given array is a quasi-permutation matrix."""
     yield isinstance(matrix, sps.spmatrix)
-    yield matrix.ndim == 2
     yield np.all(matrix.data == 1)
     matrix = matrix.tocoo()
     colTest = np.zeros(matrix.shape[1])
     colTest[matrix.col] += 1
     yield np.all(colTest == 1)
     if orthogonal:
-        yield (matrix.T @ matrix - sps.eye(matrix.shape[1])).nnz == 0
+        yield len(matrix.col) == matrix.shape[1]
 
 
 def deparallelise(matrix):
@@ -117,6 +117,89 @@ def sparse_qc(matrix, minimal=False, precision=1e-8):
     return Q, C
 
 
+# This is used to compute entries in the measurement stacks.
+def kron_dot_qpm(a, b, c, out=None):
+    """
+    Efficiently compute out[i] = kron(a[i], b[i]) @ c.
+
+    c has to be an orthogonal quasi-permutation matrix.
+
+    Parameters
+    ----------
+    a, b : array_like
+    c : spmatrix
+    out : ndarray, optional
+        A location into which the result is stored.
+        If provided, it must have the correct shape.
+        If not provided or None, a freshly-allocated array is returned.
+
+    Returns
+    -------
+    out : ndarray
+
+    Notes
+    -----
+    If a and b have more than two dimension, the Kronecker product
+    as well as the matrix product are computed only for the second dimension.
+    If ``a.shape = (r0,) + r``, ``b.shape = (s0,) + s`` and
+    ``c.shape = (r0*s0, t)``, the output has shape ``r + s + (t,)``.
+    The time complexity of this algorithm is linear in the output size.
+    """
+    assert a.ndim > 1 and b.ndim > 1
+    assert a.shape[0] == b.shape[0]
+    assert c.shape[0] == a.shape[1] * b.shape[1]
+    assert isqpm(c, orthogonal=True)
+    c = c.tocoo()
+    outShape = (a.shape[0],) + a.shape[2:] + b.shape[2:] + (c.shape[1],)
+    if out is None:
+        out = np.empty(outShape)
+    else:
+        assert out.shape == outShape
+    aShape = a.shape + (1,) * (b.ndim - 2)
+    bShape = b.shape[:2] + (1,) * (a.ndim - 2) + b.shape[2:]
+    __kron_dot_qpm(a.reshape(aShape), b.reshape(bShape), c.row, c.col, out)
+    return out
+
+@jit(nopython=True)
+def __kron_dot_qpm(a, b, cRow, cCol, out):
+    bShape1 = b.shape[1]
+    for l, k in zip(cRow, cCol):
+        i = l // bShape1
+        j = l % bShape1
+        out[..., k] = a[:, i] * b[:, j]
+
+
+# This is used to compute entries in the regularisation stacks.
+def diag_kron_conjugate_qpm(a, b, c):
+    """
+    Efficiently compute diag(c.T @ kron(diag(a), diag(b)) @ c).
+
+    c has to be an orthogonal quasi-permutation matrix.
+
+    Notes
+    -----
+    Then the eager evaluation of sps.kron in c.T @ sps.kron(diag(a), diag(b)) @ c
+    results in a comlexity of max(len(a) * len(b), c.nnz).
+    This algorithm evaluates the Kronecker product lazily and thereby reduces
+    the complexity to c.nnz.
+    """
+    assert a.ndim == 1 and b.ndim == 1
+    assert c.shape[0] == a.size * b.size
+    assert isqpm(c, orthogonal=True)
+    c = c.tocoo()
+    return __diag_kron_conjugate_qpm(a, b, c.row, c.col)
+
+
+@jit(nopython=True)
+def __diag_kron_conjugate_qpm(a, b, cRow, cCol):
+    out = np.empty(len(cCol))
+    for l, k in zip(cRow, cCol):
+        i = l // b.shape[0]
+        j = l % b.shape[0]
+        out[k] = a[i] * b[j]
+    return out
+
+
 def disp_sparsity(array):
     m,n = array.shape
     array = np.pad(array, ((0, m % 2), (0, n % 2)))
@@ -162,6 +245,7 @@ def disp_sparsity(array):
         ret += "\n"
     return ret
 
+
 # for ij in range(16):
 #     M = np.array(list(f"{bin(ij)[2:]:>04s}")).astype(int).reshape(2,2)
 #     print(M)
@@ -178,7 +262,8 @@ if __name__ == "__main__":
     console = Console()
     rng = np.random.default_rng()
     
-    D, r = 100, 4
+    d = 10
+    D, r = d ** 2, 4
     # density = 0.02
     density = 0.05
     rho = 2
@@ -195,11 +280,16 @@ if __name__ == "__main__":
     console.print(f"C shape: {C.shape}  ({C.nnz} nonzero)")
     console.print("Q:")
     console.print(Panel(disp_sparsity(Q.T.toarray())[:-1], expand=False))
-    Omega = sps.diags(np.arange(1, D+1)**rho)
+    omega_1 = np.arange(1, d+1) ** rho
+    omega_2 = rho ** np.arange(d)
+    Omega = sps.kron(sps.diags(omega_1), sps.diags(omega_2))
     Beta = (Q.T @ Omega @ Q).todia()
     assert len(Beta.offsets) == 1 and Beta.offsets[0] == 0
-    console.print("Beta:")
-    console.print(Panel(disp_sparsity(Beta.T.toarray())[:-1], expand=False))
+    assert np.all(Beta.data == diag_kron_conjugate_qpm(omega_1, omega_2, Q))
+    measures_1 = np.random.randn(20, d, 3)
+    measures_2 = np.random.randn(20, d, 5)
+    operator = (np.einsum("ndx,ney -> nxyde", measures_1, measures_2).reshape(20 * 3 * 5, D) @ Q).reshape(20, 3, 5, Q.shape[1])
+    assert np.allclose(operator, kron_dot_qpm(measures_1, measures_2, Q))
 
     console.rule("Minimal QC")
     Q, C = sparse_qc(S, minimal=True)

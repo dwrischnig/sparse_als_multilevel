@@ -3,6 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - python>=3.9
+  - numba
   - numpy
   - scipy
   - joblib
@@ -10,3 +11,4 @@ dependencies:
   - scikit-learn
   - tqdm
   - rich
+  - colored
