@@ -6,6 +6,41 @@
         "**/.micromamba": true,
         "**/micromamba": true
     },
-    "python.condaPath": "${env:CONDA_EXE}",
-    "python.pythonPath": "${env:CONDA_PREFIX}/envs/sparse_als/bin/python"
+    "git.autofetch": true,
+    "python.defaultInterpreterPath": ".micromamba/envs/sparse_als/bin/python",
+    "[python]": {
+        "editor.rulers": [
+            79,
+            120
+        ],
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": true
+        },
+        "rewrap.autoWrap.enabled": true,
+        "rewrap.wrappingColumn": 120,
+    },
+    "[git-commit]": {"editor.rulers": [50]},
+    "python.formatting.provider": "black",
+    "python.formatting.blackArgs": [
+        "--line-length", "119"
+    ],
+    "isort.args": [
+        "--settings-path", "${workspaceFolder}/.vscode/config.ini"
+    ],
+    "python.linting.enabled": true,
+    "python.linting.flake8Enabled": true,
+    "python.linting.flake8Args": [
+        "--config=${workspaceFolder}/.vscode/config.ini"
+    ],
+    "python.linting.mypyEnabled": false,
+    "python.linting.mypyArgs": [
+        "--config-file=${workspaceFolder}/.vscode/config.ini"
+    ],
+    "python.linting.lintOnSave": true,
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 60000,
+    "terminal.integrated.scrollback": 10000,
+    "autoDocstring.docstringFormat": "numpy",
+    "autoDocstring.guessTypes:": true,
 }

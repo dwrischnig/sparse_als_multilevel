@@ -1,0 +1,10 @@
+{
+    "recommendations": [
+	"eamodio.gitlens",
+	"ms-python.isort",
+	"ms-python.python",
+	"ms-python.vscode-pylance",
+	"stkb.rewrap",
+	"vscodevim.vim"
+    ]
+}

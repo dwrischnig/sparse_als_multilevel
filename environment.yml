@@ -12,3 +12,11 @@ dependencies:
   - tqdm
   - rich
   - colored
+  - ipython
+  - flake8
+  - flake8-docstrings
+  - mypy
+  - black
+  - isort
+  - memory_profiler
+  - snakeviz
