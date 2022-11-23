@@ -8,8 +8,15 @@ class GaussianProblem(Problem):
 
     def __init__(self, parameters: dict) -> None:
         super().__init__(parameters)
-        self.order = parameters["order"]
-        self.dimension = 1
+        self.__order = parameters["order"]
+
+    @property
+    def dimension(self) -> int:
+        return 1
+
+    @property
+    def order(self) -> int:
+        return self.__order
 
     def compute_sample(self, salt: NonnegativeInt, size: PositiveInt, offset: NonnegativeInt) -> tuple[FloatArray]:
         def gaussian(points):
