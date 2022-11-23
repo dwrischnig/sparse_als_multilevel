@@ -203,6 +203,9 @@ def __diag_kron_conjugate_qpm(a, b, cRow, cCol):
 
 
 def disp_sparsity(array):
+    if isinstance(array, sps.spmatrix):
+        array = array.toarray()
+    assert isinstance(array, np.ndarray)
     m,n = array.shape
     array = np.pad(array, ((0, m % 2), (0, n % 2)))
     m,n = array.shape
@@ -263,9 +266,12 @@ if __name__ == "__main__":
 
     console = Console()
     rng = np.random.default_rng()
+
+    def print_sparsity(array):
+        console.print(Panel(disp_sparsity(array)[:-1], expand=False))
     
-    d = 10
-    D, r = d ** 2, 4
+    l, d, r = 5, 10, 4
+    D = l * d
     # density = 0.02
     density = 0.05
     rho = 2
@@ -273,22 +279,22 @@ if __name__ == "__main__":
     S = sps.random(D, r, density=density, random_state=rng)
     console.print(f"S shape: {S.shape}  ({S.nnz} nonzero)")
     console.print("S:")
-    console.print(Panel(disp_sparsity(S.T.toarray())[:-1], expand=False))
+    print_sparsity(S.T)
 
-    console.rule("Standard QC")
+    console.rule("Sparse QC")
     Q, C = sparse_qc(S)
     assert isqpm(Q, orthogonal=True)
     console.print(f"Q shape: {Q.shape}  ({Q.nnz} nonzero)")
     console.print(f"C shape: {C.shape}  ({C.nnz} nonzero)")
     console.print("Q:")
-    console.print(Panel(disp_sparsity(Q.T.toarray())[:-1], expand=False))
-    omega_1 = np.arange(1, d+1) ** rho
+    print_sparsity(Q.T)
+    omega_1 = np.arange(1, l+1) ** rho
     omega_2 = rho ** np.arange(d)
     Omega = sps.kron(sps.diags(omega_1), sps.diags(omega_2))
     Beta = (Q.T @ Omega @ Q).todia()
     assert len(Beta.offsets) == 1 and Beta.offsets[0] == 0
     assert np.all(Beta.data == diag_kron_conjugate_qpm(omega_1, omega_2, Q))
-    measures_1 = np.random.randn(20, d, 3)
+    measures_1 = np.random.randn(20, l, 3)
     measures_2 = np.random.randn(20, d, 5)
     operator = (np.einsum("ndx,ney -> nxyde", measures_1, measures_2).reshape(20 * 3 * 5, D) @ Q).reshape(20, 3, 5, Q.shape[1])
     assert np.allclose(operator, kron_dot_qpm(measures_1, measures_2, Q))
@@ -298,4 +304,28 @@ if __name__ == "__main__":
     console.print(f"Q shape: {Q.shape}  ({Q.nnz} nonzero)")
     console.print(f"C shape: {C.shape}  ({C.nnz} nonzero)")
     console.print("Q:")
-    console.print(Panel(disp_sparsity(Q.T.toarray())[:-1], expand=False))
+    print_sparsity(Q.T)
+
+    console.rule("Simulate core move")
+    # This is a generalized core move, where the left basis Q of the core S is contracted to S before moving the core sparsely.
+    # This results in a potentially larger orthogonal basis Unew, which however, can be decomposed as a tensor product.
+    U, C = sparse_qc(S)
+    Q = np.linalg.svd(np.random.randn(l, l))[0]
+    assert np.allclose(Q.T @ Q, np.eye(l))
+    QI = sps.kron(Q, sps.eye(d))
+    QIU = QI @ U
+    console.print(f"QIU shape: {QIU.shape}  ({QIU.nnz} nonzero)")
+    console.print(f"QIU NNZ bound: {U.nnz * Q.shape[1]}")
+    print_sparsity(QIU.T)
+    Unew, Qnew = sparse_qc(QIU)
+    assert np.allclose((Unew @ Qnew @ C - QI @ S).data, 0)
+    console.print(f"Unew shape: {Unew.shape}  ({Unew.nnz} nonzero)")
+    print_sparsity(Unew.T)
+    console.print(f"Qnew shape: {Qnew.shape}  ({Qnew.nnz} nonzero)")
+    print_sparsity(Qnew.T)
+    # NOTE: The size of Qnew is not important, since it can be contracted into the core.
+    console.print(f"Old nnz: {Q.size + U.nnz}")
+    assert d == Unew.shape[0] // l
+    X = Unew.tocsr()[:d, :Unew.shape[1] // l]
+    assert (Unew - sps.kron(sps.eye(l), X)).nnz == 0
+    console.print(f"New nnz: {X.nnz}  ({Unew.nnz} uncompressed)")
