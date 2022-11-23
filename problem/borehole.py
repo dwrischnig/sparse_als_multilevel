@@ -14,16 +14,18 @@ class BoreholeProblem(Problem):
         super().__init__(parameters)
         self.__order = 8
         self.__dimension = 1
-        self.parameterIntervals = np.array([
-            (0.05, 0.15),  # Radius of borehole [m]
-            (100, 50_000),  # Radius of influence [m]
-            (63_070, 115_600),  # Transmissivity of upper aquifer [m2/year]
-            (990, 1_100),  # Potentiometric head of upper aquifer [m]
-            (63.1, 116),  # Transmissivity of lower aquifer [m2/year]
-            (700, 820),  # Potentiometric head of lower aquifer [m]
-            (1_120, 1_680),  # Length of borehole [m]
-            (9_885, 12_045),  # Hydraulic conductivity of borehole [m/year]
-        ]).T
+        self.parameterIntervals = np.array(
+            [
+                (0.05, 0.15),  # Radius of borehole [m]
+                (100, 50_000),  # Radius of influence [m]
+                (63_070, 115_600),  # Transmissivity of upper aquifer [m2/year]
+                (990, 1_100),  # Potentiometric head of upper aquifer [m]
+                (63.1, 116),  # Transmissivity of lower aquifer [m2/year]
+                (700, 820),  # Potentiometric head of lower aquifer [m]
+                (1_120, 1_680),  # Length of borehole [m]
+                (9_885, 12_045),  # Hydraulic conductivity of borehole [m/year]
+            ]
+        ).T
 
     @property
     def order(self):

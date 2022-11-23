@@ -34,7 +34,9 @@ parser.add_argument("PROBLEM", type=str, help="The problem to solve.")
 parser.add_argument("TRAINING_SET_SIZE", type=int, help="The training set size.")
 parser.add_argument("TEST_SET_SIZE", type=int, help="The test set size.")
 parser.add_argument("-x", "--trial", dest="trial_size", type=int, default=10, help="The trial size.")
-parser.add_argument("-d", "--dimension", dest="basis_dimension", type=int, default=10, help="The univariate basis dimension.")
+parser.add_argument(
+    "-d", "--dimension", dest="basis_dimension", type=int, default=10, help="The univariate basis dimension."
+)
 parser.add_argument("-k", "--kernel", type=str, default="H1mix", help="The RKHS to use.")
 args = parser.parse_args()
 args.problem = args.PROBLEM
@@ -58,24 +60,23 @@ else:
 
 if args.problem == "runge":
     from problem.runge import RungeProblem as ProblemClass
+
     problem = ProblemClass({})
     args.basis = "Legendre"
 elif args.problem == "gaussian":
     from problem.gaussian import GaussianProblem as ProblemClass
+
     problem = ProblemClass({"order": 2})
     args.basis = "Hermite"
 elif args.problem == "riccati":
     from problem.riccati import RiccatiProblem as ProblemClass
+
     problem = ProblemClass(ProblemClass.default_parameters)
     args.basis = "Legendre"
 elif args.problem == "darcy":
     from problem.darcy import DarcyProblem as ProblemClass
-    problem = ProblemClass({
-        "order": 10,
-        "distribution": "uniform",
-        "transformation": "integral",
-        "jobs": 8
-    })
+
+    problem = ProblemClass({"order": 10, "distribution": "uniform", "transformation": "integral", "jobs": 8})
     args.basis = "Legendre"
 else:
     raise NotImplementedError(f"Unknown problem: {args.problem}")
@@ -84,9 +85,11 @@ if args.basis == "Hermite":
     # The normalized probabilist's Hermite polynomials.
     factorials = factorial(np.arange(args.basisDimension), exact=True)
     factors = np.sqrt((1 / factorials).astype(float))
+
     def basisval(points: FloatArray) -> FloatArray:
         assert points.ndim == 2 and points.size > 0
         return hermeval(points, np.diag(factors)).T
+
     weights = np.ones(args.basisDimension)
     for order in range(1, kernelOrder + 1):
         weights += np.maximum(np.arange(args.basisDimension) - order, 0) ** 2
@@ -97,11 +100,13 @@ elif args.basis == "Legendre":
     weights, basis = np.linalg.eigh(G)
     assert np.all(weights > 0)
     assert np.allclose(basis * weights @ basis.T, G)
+
     def basisval(points: FloatArray) -> FloatArray:
         assert points.ndim == 2 and points.size > 0
         assert np.max(abs(points)) < 1
         measures = legval(points, np.diag(factors))
         return np.einsum("de,enm -> mnd", basis.T, measures)
+
 else:
     raise NotImplementedError(f"Unknown basis: {args.basis}")
 
@@ -130,31 +135,35 @@ def print_parameters(sparseALS):
         "dimensions": f"{sparseALS.dimensions}",
         "ranks": f"{sparseALS.ranks}",
         "sample size": f"{sparseALS.sampleSize}",
-        "RKHS constants": Cs
+        "RKHS constants": Cs,
     }
-    tab = " "*2
+    tab = " " * 2
     maxParameterLen = max(len(p) for p in parameters)
-    print("-"*125)
+    print("-" * 125)
     for parameter, value in parameters.items():
         offset = " " * (maxParameterLen - len(parameter))
         print(f"{tab}{parameter} = {offset}{value}")
-    print("-"*125)
+    print("-" * 125)
 
 
 def print_state(iteration, sparseALS):
     itrStr = f"{iteration:{len(str(maxIterations))}d}"
-    update_str = lambda prev, new: f"{fg('dark_sea_green_2') if new <= prev+1e-8 else fg('misty_rose_3')}{new:.2e}{attr('reset')}"
+    update_str = (
+        lambda prev, new: f"{fg('dark_sea_green_2') if new <= prev+1e-8 else fg('misty_rose_3')}{new:.2e}{attr('reset')}"
+    )
     trnStr = update_str(np.min(trainingErrors), trainingErrors[-1])
     valStr = update_str(np.min(testErrors), testErrors[-1])
+
     def disp_float(flt):
         r = f"{flt:.0f}"
         if r[-3:] == "inf":
             r = r[:-3] + "\u221e"
         return r
-    with np.errstate(divide='ignore'):
+
+    with np.errstate(divide="ignore"):
         lambdas = "10^[" + ", ".join(disp_float(l) for l in np.rint(np.log10(sparseALS.lambdas))) + "]"
     densities = "[" + ", ".join(f"{int(100*d+0.5):2d}" for d in sparseALS.densities) + "]%"
-    tqdm.write(f"[{itrStr}]  Residuals: trn={trnStr}, val={valStr}") 
+    tqdm.write(f"[{itrStr}]  Residuals: trn={trnStr}, val={valStr}")
     tab = " " * (len(itrStr) + 4)
     tqdm.write(f"{tab}Lambdas: {lambdas}")
     tqdm.write(f"{tab}Densities: {densities}")
@@ -175,7 +184,7 @@ for trial in trange(args.trialSize, desc="Trial"):
     testErrors = [sparseALS.residual(testSet)]
     times = [time.process_time()]
     print_state(0, sparseALS)
-    for iteration in range(1, maxIterations+1):
+    for iteration in range(1, maxIterations + 1):
         try:
             sparseALS.step(trainingSet)
             print_state(iteration, sparseALS)
@@ -185,11 +194,11 @@ for trial in trange(args.trialSize, desc="Trial"):
         trainingErrors.append(sparseALS.residual(trainingSet))
         testErrors.append(sparseALS.residual(testSet))
         dofs.append(sparseALS.parameters)
-    
+
     np.savez_compressed(
         f".cache/{args.problem}_t{args.trainingSetSize}_s{args.testSetSize}_z{args.trialSize}-{trial}.npz",
         times=times,
         trainingErrors=trainingErrors,
         testErrors=testErrors,
-        dofs=dofs
+        dofs=dofs,
     )

@@ -13,7 +13,7 @@ from lasso_lars import SimpleOperator, lasso_lars_cv, ConvergenceWarning
 NonNegativeInt = NewType("NonNegativeInt", int)
 PositiveInt = NewType("PositiveInt", int)
 FloatArray = NDArray[np.float_]
-warnings.filterwarnings(action='ignore', category=ConvergenceWarning, module='lasso_lars')
+warnings.filterwarnings(action="ignore", category=ConvergenceWarning, module="lasso_lars")
 
 
 class SparseALS(object):
@@ -33,8 +33,8 @@ class SparseALS(object):
         self.__corePosition = self.order - 1
         self.assert_valid_components()
         self.assert_canonicalised()
-        self.__stack = [None] * self.order + [ np.ones((self.sampleSize, 1)) ]
-        self.__weightStack = [None] * self.order + [ np.ones(1) ]
+        self.__stack = [None] * self.order + [np.ones((self.sampleSize, 1))]
+        self.__weightStack = [None] * self.order + [np.ones(1)]
         # This uses that for corePosition == 0, stack[corePosition-1] = stack[-1].
         while self.corePosition > 0:
             self.move_core("left")
@@ -71,12 +71,12 @@ class SparseALS(object):
         assert self.__weightStack[self.corePosition] is None
         for position in range(self.corePosition):
             leftRank = self.rank(position, 0)
-            assert self.__stack[position-1].shape == (self.sampleSize, leftRank)
-            assert self.__weightStack[position-1].shape == (leftRank,)
-        for position in range(self.corePosition+1, self.order):
+            assert self.__stack[position - 1].shape == (self.sampleSize, leftRank)
+            assert self.__weightStack[position - 1].shape == (leftRank,)
+        for position in range(self.corePosition + 1, self.order):
             rightRank = self.rank(position, 2)
-            assert self.__stack[position+1].shape == (self.sampleSize, rightRank)
-            assert self.__weightStack[position+1].shape == (rightRank,)
+            assert self.__stack[position + 1].shape == (self.sampleSize, rightRank)
+            assert self.__weightStack[position + 1].shape == (rightRank,)
 
     def assert_canonicalised(self) -> bool:
         """Ensure the tensor train is canonicalised."""
@@ -136,7 +136,8 @@ class SparseALS(object):
     def rank(self, position, mode):
         assert 0 <= position < self.order
         assert 0 <= mode < 3
-        if mode == 1: return self.dimensions[position]
+        if mode == 1:
+            return self.dimensions[position]
         if position < self.corePosition and mode == 2:
             # components[position].shape == (<left rank> * <dimension>, <right rank>)
             return self.__components[position].shape[1]
@@ -186,13 +187,13 @@ class SparseALS(object):
     def get_tensor(self) -> list[FloatArray]:
         out = []
         for position in range(self.order):
-            out.append(self.__components[position].toarray().reshape(
-                self.ranks[position],
-                self.dimensions[position],
-                self.ranks[position+1]
-            ))
+            out.append(
+                self.__components[position]
+                .toarray()
+                .reshape(self.ranks[position], self.dimensions[position], self.ranks[position + 1])
+            )
         return out
-    
+
     def move_core(self, direction: str):
         """Move the core.
 
@@ -211,55 +212,55 @@ class SparseALS(object):
 
         if direction == "left":
             if self.corePosition == 0:
-                raise ValueError(f"Can not move further in direction 'left'.")
+                raise ValueError("Can not move further in direction 'left'.")
             k = self.corePosition
-            newCore = self.get_component(position=k-1, unfolding=2)
-            leftRank, leftDimension, oldMiddleRank = self.component_shape(k-1)
+            newCore = self.get_component(position=k - 1, unfolding=2)
+            leftRank, leftDimension, oldMiddleRank = self.component_shape(k - 1)
             assert newCore.shape == (leftRank * leftDimension, oldMiddleRank)
             oldCore = self.get_component(position=k, unfolding=1)
             oldMiddleRank, rightDimension, rightRank = self.component_shape(k)
             assert oldCore.shape == (oldMiddleRank, rightDimension * rightRank)
 
             # TODO: Is it still important, that the old cores are retrieved before the core position changes?
-            self.corePosition = k-1
+            self.corePosition = k - 1
             Q, C = sparse_qc(oldCore.T)  # oldCore = C.T @ Q.T
             newMiddleRank = Q.shape[1]
             assert Q.T.shape == (newMiddleRank, rightDimension * rightRank)
             assert C.T.shape == (oldMiddleRank, newMiddleRank)
             self.set_component(position=k, component=Q.T, shape=(newMiddleRank, rightDimension, rightRank))
-            self.set_component(position=k-1, component=newCore @ C.T, shape=(leftRank, leftDimension, newMiddleRank))
+            self.set_component(position=k - 1, component=newCore @ C.T, shape=(leftRank, leftDimension, newMiddleRank))
 
             # Since Q.shape == (dimension * rightRank, newRank), we need kron(measures, stack).
-            self.__stack[k] = kron_dot_qpm(self.__measures[k], self.__stack[k+1], Q)
-            self.__stack[k-1] = None
-            self.__weightStack[k] = diag_kron_conjugate_qpm(self.__weights[k], self.__weightStack[k+1], Q)
-            self.__weightStack[k-1] = None
+            self.__stack[k] = kron_dot_qpm(self.__measures[k], self.__stack[k + 1], Q)
+            self.__stack[k - 1] = None
+            self.__weightStack[k] = diag_kron_conjugate_qpm(self.__weights[k], self.__weightStack[k + 1], Q)
+            self.__weightStack[k - 1] = None
 
         elif direction == "right":
             if self.corePosition == self.order - 1:
-                raise ValueError(f"Can not move further in direction 'right'.")
+                raise ValueError("Can not move further in direction 'right'.")
             k = self.corePosition
             oldCore = self.get_component(position=k, unfolding=2)
             leftRank, leftDimension, oldMiddleRank = self.component_shape(k)
             assert oldCore.shape == (leftRank * leftDimension, oldMiddleRank)
-            newCore = self.get_component(position=k+1, unfolding=1)
-            oldMiddleRank, rightDimension, rightRank = self.component_shape(k+1)
+            newCore = self.get_component(position=k + 1, unfolding=1)
+            oldMiddleRank, rightDimension, rightRank = self.component_shape(k + 1)
             assert newCore.shape == (oldMiddleRank, rightDimension * rightRank)
 
             # TODO: Is it still important, that the old cores are retrieved before the core position changes?
-            self.corePosition = k+1
+            self.corePosition = k + 1
             Q, C = sparse_qc(oldCore)  # oldCore = Q @ C
             newMiddleRank = Q.shape[1]
             assert Q.shape == (leftRank * leftDimension, newMiddleRank)
             assert C.shape == (newMiddleRank, oldMiddleRank)
             self.set_component(position=k, component=Q, shape=(leftRank, leftDimension, newMiddleRank))
-            self.set_component(position=k+1, component=C @ newCore, shape=(newMiddleRank, rightDimension, rightRank))
+            self.set_component(position=k + 1, component=C @ newCore, shape=(newMiddleRank, rightDimension, rightRank))
 
             # Since Q.shape == (leftRank * dimension, r), we need kron(stack, measures).
-            self.__stack[k] = kron_dot_qpm(self.__stack[k-1], self.__measures[k], Q)
-            self.__stack[k+1] = None
-            self.__weightStack[k] = diag_kron_conjugate_qpm(self.__weightStack[k-1], self.__weights[k], Q)
-            self.__weightStack[k+1] = None
+            self.__stack[k] = kron_dot_qpm(self.__stack[k - 1], self.__measures[k], Q)
+            self.__stack[k + 1] = None
+            self.__weightStack[k] = diag_kron_conjugate_qpm(self.__weightStack[k - 1], self.__weights[k], Q)
+            self.__weightStack[k + 1] = None
 
     def microstep(self, set=slice(None)):
         self.assert_valid_basics()
@@ -269,12 +270,12 @@ class SparseALS(object):
         if not isinstance(set, slice):
             assert np.ndim(set) == 1
         k = self.corePosition
-        l,e,r = self.component_shape(k)
+        l, e, r = self.component_shape(k)
 
-        weights = np.kron(np.kron(self.__weightStack[k-1], self.__weights[k]), self.__weightStack[k+1])
-        lOp = self.__stack[k-1][set]
+        weights = np.kron(np.kron(self.__weightStack[k - 1], self.__weights[k]), self.__weightStack[k + 1])
+        lOp = self.__stack[k - 1][set]
         eOp = self.__measures[k][set]
-        rOp = self.__stack[k+1][set]
+        rOp = self.__stack[k + 1][set]
         operator = (lOp[:, :, None, None] * eOp[:, None, :, None] * rOp[:, None, None, :]).reshape(lOp.shape[0], -1)
         # nl, ne, nr -> nler
         operator /= weights[None]
@@ -294,7 +295,7 @@ class SparseALS(object):
         self.set_component(position=k, component=core, shape=(lOp.shape[1], eOp.shape[1], rOp.shape[1]))
         self.lambdas[k] = model.alpha_
         self.densities[k] = len(model.active_) / len(weights)
-    
+
     def step(self, set=slice(None)):
         self.microstep(set)
         if self.order == 1:
@@ -314,9 +315,9 @@ class SparseALS(object):
             assert np.ndim(set) == 1
         k = self.corePosition
 
-        lOp = self.__stack[k-1][set]
+        lOp = self.__stack[k - 1][set]
         eOp = self.__measures[k][set]
-        rOp = self.__stack[k+1][set]
+        rOp = self.__stack[k + 1][set]
         erOp = (eOp[:, :, None] * rOp[:, None, :]).reshape(eOp.shape[0], -1)  # ne, nr -> ner
         core = self.get_component(position=k, unfolding=1)
         assert core.shape == (lOp.shape[1], erOp.shape[1])

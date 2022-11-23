@@ -15,6 +15,7 @@ def fold_all(generator: Iterator[bool]):
     @wraps(generator)
     def wrapper(*args, **kwargs) -> bool:
         return all(generator(*args, **kwargs))
+
     return wrapper
 
 
@@ -66,7 +67,7 @@ def deparallelise(matrix):
         matrix_csc = matrix.tocsc()
         assert (T - matrix_csc[matrix.row][idx]).nnz == 0
         assert (T - matrix_csc[rs]).nnz == 0
-    
+
     s = np.ones(rank, matrix.dtype)
     k = np.arange(rank)
     N = sps.coo_matrix((s, (rs, k)), shape=(matrix.shape[0], rank))
@@ -162,6 +163,7 @@ def kron_dot_qpm(a, b, c, out=None):
     __kron_dot_qpm(a.reshape(aShape), b.reshape(bShape), c.row, c.col, out)
     return out
 
+
 @jit(nopython=True)
 def __kron_dot_qpm(a, b, cRow, cCol, out):
     bShape1 = b.shape[1]
@@ -206,14 +208,14 @@ def disp_sparsity(array):
     if isinstance(array, sps.spmatrix):
         array = array.toarray()
     assert isinstance(array, np.ndarray)
-    m,n = array.shape
+    m, n = array.shape
     array = np.pad(array, ((0, m % 2), (0, n % 2)))
-    m,n = array.shape
+    m, n = array.shape
     assert m % 2 == 0 and n % 2 == 0
     ret = ""
     for j in range(m // 2):
         for k in range(n // 2):
-            block = array[2*j: 2*j+2, 2*k: 2*k+2] != 0
+            block = array[2 * j : 2 * j + 2, 2 * k : 2 * k + 2] != 0
             assert block.shape == (2, 2)
             if np.all(block == [[0, 0], [0, 0]]):
                 ret += " "
@@ -269,7 +271,7 @@ if __name__ == "__main__":
 
     def print_sparsity(array):
         console.print(Panel(disp_sparsity(array)[:-1], expand=False))
-    
+
     l, d, r = 5, 10, 4
     D = l * d
     # density = 0.02
@@ -288,7 +290,7 @@ if __name__ == "__main__":
     console.print(f"C shape: {C.shape}  ({C.nnz} nonzero)")
     console.print("Q:")
     print_sparsity(Q.T)
-    omega_1 = np.arange(1, l+1) ** rho
+    omega_1 = np.arange(1, l + 1) ** rho
     omega_2 = rho ** np.arange(d)
     Omega = sps.kron(sps.diags(omega_1), sps.diags(omega_2))
     Beta = (Q.T @ Omega @ Q).todia()
@@ -296,7 +298,9 @@ if __name__ == "__main__":
     assert np.all(Beta.data == diag_kron_conjugate_qpm(omega_1, omega_2, Q))
     measures_1 = np.random.randn(20, l, 3)
     measures_2 = np.random.randn(20, d, 5)
-    operator = (np.einsum("ndx,ney -> nxyde", measures_1, measures_2).reshape(20 * 3 * 5, D) @ Q).reshape(20, 3, 5, Q.shape[1])
+    operator = (np.einsum("ndx,ney -> nxyde", measures_1, measures_2).reshape(20 * 3 * 5, D) @ Q).reshape(
+        20, 3, 5, Q.shape[1]
+    )
     assert np.allclose(operator, kron_dot_qpm(measures_1, measures_2, Q))
 
     console.rule("Minimal QC")
@@ -326,6 +330,6 @@ if __name__ == "__main__":
     # NOTE: The size of Qnew is not important, since it can be contracted into the core.
     console.print(f"Old nnz: {Q.size + U.nnz}")
     assert d == Unew.shape[0] // l
-    X = Unew.tocsr()[:d, :Unew.shape[1] // l]
+    X = Unew.tocsr()[:d, : Unew.shape[1] // l]
     assert (Unew - sps.kron(sps.eye(l), X)).nnz == 0
     console.print(f"New nnz: {X.nnz}  ({Unew.nnz} uncompressed)")

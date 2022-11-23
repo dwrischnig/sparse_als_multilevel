@@ -13,7 +13,13 @@ def HkinnerLegendre(k):
     assert isinstance(k, int) and k >= 0
 
     def inner(c1, c2):
-        """Return the Sobolev-inner product of order k of the Legendre polynomials corresponding to the given coefficient vectors."""
+        """Return the Sobolev-inner product of order k.
+
+        Parameters
+        ----------
+        c1, c2 : np.ndarray
+            Coefficient vectors with respect to the Legendre polynomials.
+        """
         ret = L2innerLegendre(c1, c2)
         for j in range(k):
             c1 = legder(c1)
@@ -27,10 +33,13 @@ def HkinnerLegendre(k):
 def Gramian(d, inner):
     """Return the Gramian matrix of dimension d with respect to the given inner product."""
     matrix = np.empty((d, d))
-    e = lambda k: np.eye(1, d, k)[0]
+
+    def standard_basis(k):
+        return np.eye(1, d, k)[0]
+
     for i in range(d):
-        ei = e(i)
+        ei = standard_basis(i)
         for j in range(i + 1):
-            ej = e(j)
+            ej = standard_basis(j)
             matrix[i, j] = matrix[j, i] = inner(ei, ej)
     return matrix

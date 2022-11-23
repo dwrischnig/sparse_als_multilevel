@@ -6,12 +6,8 @@ from .problem import NonnegativeInt, PositiveInt, Problem
 
 class RiccatiProblem(Problem):
     """Value function of the Riccati equation."""
-    default_parameters = {
-        "order": 8,
-        "diffusivity": 1.0,
-        "cost parameter": 0.1,
-        "boundary type": "Neumann"
-    }
+
+    default_parameters = {"order": 8, "diffusivity": 1.0, "cost parameter": 0.1, "boundary type": "Neumann"}
 
     def __init__(self, parameters: dict) -> None:
         super().__init__(parameters)

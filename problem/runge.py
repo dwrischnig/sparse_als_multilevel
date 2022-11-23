@@ -19,9 +19,10 @@ class RungeProblem(Problem):
 
     def compute_sample(self, salt: NonnegativeInt, size: PositiveInt, offset: NonnegativeInt) -> tuple[FloatArray]:
         """Compute a sample of model evaluations."""
+
         def runge(points):
             assert points.shape[1] == 1
-            return 1 / (1 + 25*points**2)
+            return 1 / (1 + 25 * points**2)
 
         rng = np.random.default_rng(salt)
         points = rng.uniform(-1, 1, (size, self.order))[offset:]
