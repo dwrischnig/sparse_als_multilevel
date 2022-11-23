@@ -1,17 +1,19 @@
 from functools import cached_property
 from typing import NewType
+import warnings
 
 import numpy as np
 from numpy.typing import NDArray
 import scipy.sparse as sps
 
 from sparse_qc import isqpm, sparse_qc, kron_dot_qpm, diag_kron_conjugate_qpm
-from lasso_lars import SimpleOperator, lasso_lars_cv
+from lasso_lars import SimpleOperator, lasso_lars_cv, ConvergenceWarning
 
 
 NonNegativeInt = NewType("NonNegativeInt", int)
 PositiveInt = NewType("PositiveInt", int)
 FloatArray = NDArray[np.float_]
+warnings.filterwarnings(action='ignore', category=ConvergenceWarning, module='lasso_lars')
 
 
 class SparseALS(object):
