@@ -6,6 +6,7 @@
 	"ms-python.vscode-pylance",
 	"stkb.rewrap",
 	"njpwerner.autodocstring",
-	"vscodevim.vim"
+	"vscodevim.vim",
+	"CrossHair.crosshair"
     ]
 }

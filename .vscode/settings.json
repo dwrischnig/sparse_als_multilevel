@@ -23,7 +23,7 @@
     "[git-commit]": {"editor.rulers": [50]},
     "python.formatting.provider": "black",
     "python.formatting.blackArgs": [
-        "--line-length", "119"
+        "--line-length", "120"
     ],
     "isort.args": [
         "--settings-path", "${workspaceFolder}/.vscode/config.ini"
@@ -43,4 +43,5 @@
     "terminal.integrated.scrollback": 10000,
     "autoDocstring.docstringFormat": "numpy",
     "autoDocstring.guessTypes:": true,
+    "python.analysis.typeCheckingMode": "basic",
 }

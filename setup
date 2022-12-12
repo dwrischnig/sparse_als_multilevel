@@ -91,6 +91,38 @@ __install_mamba () {
 }
 
 
+__install_crosshair () {
+    (
+        set -e
+        local __env_name=$(grep 'name:' ${__base}/environment.yml | awk '{ print $2 }')
+        if [ -z "${__env_name}" ]; then
+            echo "Error: Field 'name' in ${__base}/environment.yml could not be decoded."
+            return 1
+        fi
+        # source ${__base}/.micromambarc
+        __init_mamba
+        micromamba activate ${__env_name}
+        echo "Installing 'crosshair' into environment '${__env_name}'."
+
+        if [ "${CONDA_PREFIX}" != "${MAMBA_ROOT_PREFIX}/envs/${__env_name}" ]; then
+            echo "Something went terribly wrong!"
+            return 1
+        fi
+
+        local __temp_dir=$(mktemp -d)
+        cd ${__temp_dir}
+        git clone git@github.com:pschanely/CrossHair.git
+        cd CrossHair
+
+        python -m pip install .
+        python -m pip install pygls
+
+        cd ../..
+        rm -rf ${__temp_dir}
+    )
+}
+
+
 __install_xerus () {
     (
         set -e
@@ -183,6 +215,8 @@ if [ -z "$1" ]; then
     fi
 elif [ "$1" = 'install' -a "$2" = "mamba" ]; then
     __install_mamba
+elif [ "$1" = 'install' -a "$2" = "crosshair" ]; then
+    __install_crosshair
 elif [ "$1" = 'install' -a "$2" = "xerus" ]; then
     __install_xerus
 elif [ "$1" = 'update' ]; then
