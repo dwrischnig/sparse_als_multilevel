@@ -122,13 +122,15 @@ def deparallelise(matrix: sps.spmatrix) -> tuple[sps.spmatrix, sps.spmatrix]:
     return N, T
 
 
-@deal.pre(lambda _: is_sparse_matrix(_.matrix))
+@deal.pre(lambda _: is_sparse_matrix(_._matrix))
 @deal.pre(lambda _: _.precision > 0)
 @deal.post(lambda result: len(result) == 2 and is_sparse_matrix(result[0]) and is_sparse_matrix(result[1]))
-@deal.ensure(lambda _: deal.implies(not _.minimal, _.result[0].nnz <= _.matrix.nnz and _.result[1].nnz <= _.matrix.nnz))
+@deal.ensure(
+    lambda _: deal.implies(not _.minimal, _.result[0].nnz <= _._matrix.nnz and _.result[1].nnz <= _._matrix.nnz)
+)
 @deal.ensure(
     lambda _: deal.implies(
-        _.minimal, _.result[0].nnz <= _.result[0].shape[1] * _.matrix.nnz and _.result[1].nnz <= _.matrix.nnz
+        _.minimal, _.result[0].nnz <= _.result[0].shape[1] * _._matrix.nnz and _.result[1].nnz <= _._matrix.nnz
     )
 )
 @deal.has("import")  # The first line in np.linalg.svd is "import numpy as _nx".
