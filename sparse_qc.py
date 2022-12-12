@@ -1,17 +1,24 @@
 # coding: utf-8
+"""Functions for decomposition, contraction and presentation of sparse matrices."""
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import Any, Callable
+from collections.abc import Iterable, Iterator
 from functools import wraps
 
 import scipy.sparse as sps
 import numpy as np
 from numba import jit
+import deal
+from rich.console import Console
+from rich.panel import Panel
 
-import autoPDB
+import autoPDB  # noqa: F401
 
 
-def fold_all(generator: Iterator[bool]):
+def fold_all(generator: Callable[..., Iterable]) -> Callable[..., bool]:
+    """Turn a function returning an iterable into a function returning a bool."""
+
     @wraps(generator)
     def wrapper(*args, **kwargs) -> bool:
         return all(generator(*args, **kwargs))
@@ -19,10 +26,15 @@ def fold_all(generator: Iterator[bool]):
     return wrapper
 
 
+def is_sparse_matrix(matrix: Any) -> bool:
+    """Check whether the given object is a sparse matrix."""
+    return isinstance(matrix, sps.spmatrix)
+
+
 @fold_all
-def isqpm(matrix, orthogonal=False):
-    """Check whether the given array is a quasi-permutation matrix."""
-    yield isinstance(matrix, sps.spmatrix)
+def is_qpm(matrix: Any, orthogonal: bool = False) -> Iterator:
+    """Check whether the given object is a quasi-permutation matrix."""
+    yield is_sparse_matrix(matrix)
     yield np.all(matrix.data == 1)
     matrix = matrix.tocoo()
     colTest = np.zeros(matrix.shape[1])
@@ -32,14 +44,27 @@ def isqpm(matrix, orthogonal=False):
         yield len(matrix.col) == matrix.shape[1]
 
 
-def deparallelise(matrix):
-    """
-    Remove duplicate columns from a quasi-permutation matrix.
+@deal.pre(is_qpm)
+@deal.post(lambda result: is_qpm(result[0], orthogonal=True) and is_qpm(result[1]))
+@deal.ensure(lambda matrix, result: result[0].nnz <= matrix.nnz and result[1].nnz <= matrix.nnz)
+@deal.has()
+@deal.raises(TypeError)  # np.unique (This should not happen.)
+def deparallelise(matrix: sps.spmatrix) -> tuple[sps.spmatrix, sps.spmatrix]:
+    """Return a sparse QC decomposition of a quasi-permutation matrices (QPM).
 
-    The resulting matrix will be left-orthogonal.
-    """
-    assert isqpm(matrix)
+    Parameters
+    ----------
+    matrix : sps.spmatrix
+        A quasi-permutation matrix.
 
+    Returns
+    -------
+    Q : sps.spmatrix
+        The original matrix with duplicate columns removed.
+        This matrix will be left-orthogonal.
+    C : sps.spmatrix
+        A sparse matrix such that Q @ C returns the original matrix.
+    """
     if __debug__:
         rs, idx, inv = np.unique(matrix.row, return_index=True, return_inverse=True)
         # Let C = matrix.col, R = matrix.row, oR = rs, I = idx and J = inv.
@@ -55,17 +80,20 @@ def deparallelise(matrix):
     T = sps.coo_matrix((s, (inv, matrix.col)), shape=(rank, matrix.shape[1]))
     if __debug__:
         # Thus J @ I @ R = R and I @ J @ oR = oR.
-        # Moreover, since R is an index vector as well, we can write the slicing of the non-zero rows of matrix as R @ matrix = matrix[R].
-        # Removing the duplicates, T is given by T = I @ R @ matrix. This can be written as I @ (R @ matrix) = matrix[R][I] or (I @ R) @ matrix = oR @ matrix = matrix[oR].
-        # T can, however be implemented more efficiently by noting that T[l,k] = matrix[oR[l], k] = 1 if and only if (oR[l], k) in zip(R, C).
-        # Since the elements in C are unique, there exists only one such pair and for every k in C and we can define a unique l_k satisfying (oR[l_k], k) in zip(R, C).
+        # Since R is an index vector, we can write the slicing of the non-zero rows of matrix as R @ matrix = matrix[R].
+        # Removing the duplicates, T is given by T = I @ R @ matrix.
+        # This can be written as I @ (R @ matrix) = matrix[R][I] or (I @ R) @ matrix = oR @ matrix = matrix[oR].
+        # T can be implemented more efficiently by noting that
+        #     T[l,k] = matrix[oR[l], k] = 1 if and only if (oR[l], k) in zip(R, C).
+        # Since the elements in C are unique, there exists only one such pair and for every k in C
+        # and we can define a unique l_k satisfying (oR[l_k], k) in zip(R, C).
         # Assuming C satisfies
         assert np.all(matrix.col == np.arange(matrix.shape[1]))
         # it holds that C[k] = k for every natural number k.
         # The above condition is thus equivalent to (oR[l_k], k) = (R[k], k) = zip(R, C)[k].
         # The sought index l_k is thus given by l_k = J_k, since oR[l_k] = (J @ I @ R)_k = R_k.
         matrix_csc = matrix.tocsc()
-        assert (T - matrix_csc[matrix.row][idx]).nnz == 0
+        assert (T - matrix_csc[matrix.row][idx]).nnz == 0  # type: ignore
         assert (T - matrix_csc[rs]).nnz == 0
 
     s = np.ones(rank, matrix.dtype)
@@ -94,9 +122,42 @@ def deparallelise(matrix):
     return N, T
 
 
-def sparse_qc(matrix, minimal=False, precision=1e-8):
-    assert isinstance(matrix, sps.spmatrix)
-    matrix = matrix.tocoo()
+@deal.pre(lambda _: is_sparse_matrix(_.matrix))
+@deal.pre(lambda _: _.precision > 0)
+@deal.post(lambda result: len(result) == 2 and is_sparse_matrix(result[0]) and is_sparse_matrix(result[1]))
+@deal.ensure(lambda _: deal.implies(not _.minimal, _.result[0].nnz <= _.matrix.nnz and _.result[1].nnz <= _.matrix.nnz))
+@deal.ensure(
+    lambda _: deal.implies(
+        _.minimal, _.result[0].nnz <= _.result[0].shape[1] * _.matrix.nnz and _.result[1].nnz <= _.matrix.nnz
+    )
+)
+@deal.has("import")  # The first line in np.linalg.svd is "import numpy as _nx".
+@deal.reason(np.linalg.LinAlgError, lambda matrix, minimal, precision: bool(minimal))
+def sparse_qc(
+    _matrix: sps.spmatrix, minimal: bool = False, precision: float = 1e-8
+) -> tuple[sps.spmatrix, sps.spmatrix]:
+    """Return a sparse QC decomposition of a sparse matrix.
+
+    Parameters
+    ----------
+    _matrix : sps.spmatrix
+        A sparse matrix.
+    minimal : bool, optional
+        Whether or not to compute a minimal QC decomposition.
+        False by default.
+    precision : float, optional
+        The precision to use in a minimal QC decomposition.
+        Defaults to 1e-8.
+
+    Returns
+    -------
+    Q : sps.spmatrix
+        A left-orthogonal sparse matrix.
+        If minimal is False, Q will be a quasi-permutation matrix.
+    C : sps.spmatrix
+        A sparse matrix such that Q @ C returns the original matrix.
+    """
+    matrix = _matrix.tocoo()
     s = np.ones(matrix.nnz, dtype=matrix.dtype)
     k = np.arange(matrix.nnz)
     U = sps.coo_matrix((s, (matrix.row, k)), shape=(matrix.shape[0], matrix.nnz))
@@ -151,7 +212,7 @@ def kron_dot_qpm(a, b, c, out=None):
     assert a.ndim > 1 and b.ndim > 1
     assert a.shape[0] == b.shape[0]
     assert c.shape[0] == a.shape[1] * b.shape[1]
-    assert isqpm(c, orthogonal=True)
+    assert is_qpm(c, orthogonal=True)
     c = c.tocoo()
     outShape = (a.shape[0],) + a.shape[2:] + b.shape[2:] + (c.shape[1],)
     if out is None:
@@ -167,7 +228,7 @@ def kron_dot_qpm(a, b, c, out=None):
 @jit(nopython=True)
 def __kron_dot_qpm(a, b, cRow, cCol, out):
     bShape1 = b.shape[1]
-    for l, k in zip(cRow, cCol):
+    for l, k in zip(cRow, cCol):  # noqa: E741
         i = l // bShape1
         j = l % bShape1
         out[..., k] = a[:, i] * b[:, j]
@@ -189,7 +250,7 @@ def diag_kron_conjugate_qpm(a, b, c):
     """
     assert a.ndim == 1 and b.ndim == 1
     assert c.shape[0] == a.size * b.size
-    assert isqpm(c, orthogonal=True)
+    assert is_qpm(c, orthogonal=True)
     c = c.tocoo()
     return __diag_kron_conjugate_qpm(a, b, c.row, c.col)
 
@@ -197,14 +258,23 @@ def diag_kron_conjugate_qpm(a, b, c):
 @jit(nopython=True)
 def __diag_kron_conjugate_qpm(a, b, cRow, cCol):
     out = np.empty(len(cCol))
-    for l, k in zip(cRow, cCol):
+    for l, k in zip(cRow, cCol):  # noqa: E741
         i = l // b.shape[0]
         j = l % b.shape[0]
         out[k] = a[i] * b[j]
     return out
 
 
-def disp_sparsity(array):
+def print_sparsity(array: sps.spmatrix | np.ndarray, console: Console):
+    """Print the sparsity pattern of a matrix.
+
+    Parameters
+    ----------
+    array : sps.spmatrix | np.ndarray
+        The matrix to visualise.
+    console : rich.Console
+        The rich console to print to.
+    """
     if isinstance(array, sps.spmatrix):
         array = array.toarray()
     assert isinstance(array, np.ndarray)
@@ -250,7 +320,8 @@ def disp_sparsity(array):
             if np.all(block == [[1, 1], [1, 1]]):
                 ret += "\u2588"
         ret += "\n"
-    return ret
+
+    console.print(Panel(ret[:-1], expand=False))
 
 
 # for ij in range(16):
@@ -262,15 +333,8 @@ def disp_sparsity(array):
 
 
 if __name__ == "__main__":
-    from rich.console import Console
-    from rich.panel import Panel
-    import matplotlib.pyplot as plt
-
     console = Console()
     rng = np.random.default_rng()
-
-    def print_sparsity(array):
-        console.print(Panel(disp_sparsity(array)[:-1], expand=False))
 
     l, d, r = 5, 10, 4
     D = l * d
@@ -281,15 +345,15 @@ if __name__ == "__main__":
     S = sps.random(D, r, density=density, random_state=rng)
     console.print(f"S shape: {S.shape}  ({S.nnz} nonzero)")
     console.print("S:")
-    print_sparsity(S.T)
+    print_sparsity(S.T, console)
 
     console.rule("Sparse QC")
     Q, C = sparse_qc(S)
-    assert isqpm(Q, orthogonal=True)
+    assert is_qpm(Q, orthogonal=True)
     console.print(f"Q shape: {Q.shape}  ({Q.nnz} nonzero)")
     console.print(f"C shape: {C.shape}  ({C.nnz} nonzero)")
     console.print("Q:")
-    print_sparsity(Q.T)
+    print_sparsity(Q.T, console)
     omega_1 = np.arange(1, l + 1) ** rho
     omega_2 = rho ** np.arange(d)
     Omega = sps.kron(sps.diags(omega_1), sps.diags(omega_2))
@@ -308,28 +372,31 @@ if __name__ == "__main__":
     console.print(f"Q shape: {Q.shape}  ({Q.nnz} nonzero)")
     console.print(f"C shape: {C.shape}  ({C.nnz} nonzero)")
     console.print("Q:")
-    print_sparsity(Q.T)
+    print_sparsity(Q.T, console)
 
     console.rule("Simulate core move")
-    # This is a generalized core move, where the left basis Q of the core S is contracted to S before moving the core sparsely.
+    # This is a generalized core move.
+    # The left basis Q of the core S is contracted to S before moving the core sparsely.
     # This results in a potentially larger orthogonal basis Unew, which however, can be decomposed as a tensor product.
     U, C = sparse_qc(S)
     Q = np.linalg.svd(np.random.randn(l, l))[0]
     assert np.allclose(Q.T @ Q, np.eye(l))
     QI = sps.kron(Q, sps.eye(d))
     QIU = QI @ U
-    console.print(f"QIU shape: {QIU.shape}  ({QIU.nnz} nonzero)")
+    console.print(f"QIU shape: {QIU.shape}  ({QIU.nnz} nonzero)")  # type: ignore
     console.print(f"QIU NNZ bound: {U.nnz * Q.shape[1]}")
-    print_sparsity(QIU.T)
+    print_sparsity(QIU.T, console)
     Unew, Qnew = sparse_qc(QIU)
     assert np.allclose((Unew @ Qnew @ C - QI @ S).data, 0)
     console.print(f"Unew shape: {Unew.shape}  ({Unew.nnz} nonzero)")
-    print_sparsity(Unew.T)
+    console.print(f"Unew rank bound: {U.nnz * Q.shape[1]}")
+    print_sparsity(Unew.T, console)
     console.print(f"Qnew shape: {Qnew.shape}  ({Qnew.nnz} nonzero)")
-    print_sparsity(Qnew.T)
+    print_sparsity(Qnew.T, console)
     # NOTE: The size of Qnew is not important, since it can be contracted into the core.
     console.print(f"Old nnz: {Q.size + U.nnz}")
     assert d == Unew.shape[0] // l
     X = Unew.tocsr()[:d, : Unew.shape[1] // l]
-    assert (Unew - sps.kron(sps.eye(l), X)).nnz == 0
+    assert (Unew - sps.kron(sps.eye(l), X)).nnz == 0  # type: ignore
     console.print(f"New nnz: {X.nnz}  ({Unew.nnz} uncompressed)")
+    print_sparsity(X.T, console)

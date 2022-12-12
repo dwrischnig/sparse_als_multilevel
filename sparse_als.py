@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 import scipy.sparse as sps
 
-from sparse_qc import isqpm, sparse_qc, kron_dot_qpm, diag_kron_conjugate_qpm
+from sparse_qc import is_qpm, sparse_qc, kron_dot_qpm, diag_kron_conjugate_qpm
 from lasso_lars import SimpleOperator, lasso_lars_cv, ConvergenceWarning
 
 
@@ -84,14 +84,14 @@ class SparseALS(object):
         assert 0 <= self.corePosition < self.order
         for position in range(self.corePosition):
             component = self.get_component(position, unfolding=2)
-            assert isqpm(component, orthogonal=True)
+            assert is_qpm(component, orthogonal=True)
         for position in range(self.corePosition + 1, self.order):
             component = self.get_component(position, unfolding=1)
-            assert isqpm(component.T, orthogonal=True)
+            assert is_qpm(component.T, orthogonal=True)
 
     @property
     def corePosition(self) -> NonNegativeInt:
-        """The position of the core tensor.
+        """Return the position of the core tensor.
 
         All component tensors left of the core tensor are left-orthogonal.
         All component tensors right of the core tensor are right-orthogonal.
@@ -99,7 +99,7 @@ class SparseALS(object):
         return self.__corePosition
 
     @corePosition.setter
-    def corePosition(self, newCorePosition):
+    def corePosition(self, newCorePosition: NonNegativeInt):
         if newCorePosition < self.__corePosition:
             for position in range(newCorePosition, self.__corePosition):
                 component = self.__components[position]
@@ -115,22 +115,22 @@ class SparseALS(object):
 
     @property
     def sampleSize(self) -> NonNegativeInt:
-        """The sample size  of the problem."""
+        """Return the sample size  of the problem."""
         return self.__values.size
 
     @cached_property
     def dimensions(self) -> list[PositiveInt]:
-        """The dimensions of the tensor train."""
+        """Return the dimensions of the tensor train."""
         return [w.size for w in self.__weights]
 
     @property
     def order(self) -> PositiveInt:
-        """The order of the tensor train."""
+        """Return the order of the tensor train."""
         return len(self.dimensions)
 
     @property
     def parameters(self) -> NonNegativeInt:
-        """The number of parameters."""
+        """Return the number of parameters."""
         return sum(component.nnz for component in self.__components)
 
     def rank(self, position, mode):
