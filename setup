@@ -50,7 +50,6 @@ __init_mamba () {
 }
 
 
-
 __install_mamba () {
     (
         set -e
