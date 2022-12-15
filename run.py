@@ -194,6 +194,8 @@ for trial in trange(args.trialSize, desc="Trial"):
         trainingErrors.append(sparseALS.residual(trainingSet))
         testErrors.append(sparseALS.residual(testSet))
         dofs.append(sparseALS.parameters)
+        if iteration - np.argmin(trainingErrors) - 1 > 3:
+            break
 
     np.savez_compressed(
         f".cache/{args.problem}_t{args.trainingSetSize}_s{args.testSetSize}_z{args.trialSize}-{trial}.npz",

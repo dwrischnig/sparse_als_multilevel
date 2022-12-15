@@ -122,27 +122,25 @@ def deparallelise(matrix: sps.spmatrix) -> tuple[sps.spmatrix, sps.spmatrix]:
     return N, T
 
 
-@deal.pre(lambda _: is_sparse_matrix(_._matrix))
+@deal.pre(lambda _: is_sparse_matrix(_.matrix))
 @deal.pre(lambda _: _.precision > 0)
 @deal.post(lambda result: len(result) == 2 and is_sparse_matrix(result[0]) and is_sparse_matrix(result[1]))
-@deal.ensure(
-    lambda _: deal.implies(not _.minimal, _.result[0].nnz <= _._matrix.nnz and _.result[1].nnz <= _._matrix.nnz)
-)
+@deal.ensure(lambda _: deal.implies(not _.minimal, _.result[0].nnz <= _.matrix.nnz and _.result[1].nnz <= _.matrix.nnz))
 @deal.ensure(
     lambda _: deal.implies(
-        _.minimal, _.result[0].nnz <= _.result[0].shape[1] * _._matrix.nnz and _.result[1].nnz <= _._matrix.nnz
+        _.minimal, _.result[0].nnz <= _.result[0].shape[1] * _.matrix.nnz and _.result[1].nnz <= _.matrix.nnz
     )
 )
 @deal.has("import")  # The first line in np.linalg.svd is "import numpy as _nx".
 @deal.reason(np.linalg.LinAlgError, lambda matrix, minimal, precision: bool(minimal))
 def sparse_qc(
-    _matrix: sps.spmatrix, minimal: bool = False, precision: float = 1e-8
+    matrix: sps.spmatrix, minimal: bool = False, precision: float = 1e-8
 ) -> tuple[sps.spmatrix, sps.spmatrix]:
     """Return a sparse QC decomposition of a sparse matrix.
 
     Parameters
     ----------
-    _matrix : sps.spmatrix
+    matrix : sps.spmatrix
         A sparse matrix.
     minimal : bool, optional
         Whether or not to compute a minimal QC decomposition.
@@ -159,7 +157,7 @@ def sparse_qc(
     C : sps.spmatrix
         A sparse matrix such that Q @ C returns the original matrix.
     """
-    matrix = _matrix.tocoo()
+    matrix = matrix.tocoo()
     s = np.ones(matrix.nnz, dtype=matrix.dtype)
     k = np.arange(matrix.nnz)
     U = sps.coo_matrix((s, (matrix.row, k)), shape=(matrix.shape[0], matrix.nnz))
