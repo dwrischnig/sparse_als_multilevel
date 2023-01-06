@@ -1,3 +1,13 @@
+if ! [ "$1" = 'install' -o "$1" = 'purge' -o "$1" = 'set_variables' ]; then
+    echo    'Usage: source setup [SUBCOMMAND]'
+    echo    'Set up a virtual environment for this research project.'
+    echo    'Subcommands:'
+    echo -e '  install mamba\t\tInstall micromamba and create the environment.'
+    echo -e '  install xerus\t\tInstall xerus into the environment.'
+    echo -e '  purge  \t\tUninstall everything and remove the environment.'
+    return
+fi
+
 case $- in
     *i*) ;;
       *) echo "'source setup' requires an interactive session."; return 1;;
@@ -18,18 +28,15 @@ if [ -z "${__sourced}" ]; then
     exit 1;
 fi
 
-
-if [ -x "$(command -v realpath &>/dev/null)" ]; then
+if ! command -v realpath &>/dev/null; then
     echo "Command 'realpath' could not be found.";
     return 1;
 fi
 
-
-if [ -x "$(command -v wget &>/dev/null)" ]; then
+if ! command -v wget &>/dev/null; then
     echo "Command 'wget' could not be found.";
     return 1;
 fi
-
 
 if [ -n "$ZSH_VERSION" ]; then
     __shell=zsh;
@@ -42,6 +49,13 @@ else
     return 1;
 fi
 
+__env_name=$(grep 'name:' ${__base}/environment.yml | awk '{ print $2 }')
+if [ -z "${__env_name}" ]; then
+    echo "Error: Field 'name' in ${__base}/environment.yml could not be decoded."
+    return 1
+fi
+__mamba_root_prefix=${__base}/.micromamba/envs/${__env_name};
+
 
 __init_mamba () {
     export MAMBA_EXE=${__base}/micromamba;
@@ -50,10 +64,14 @@ __init_mamba () {
 }
 
 
+if [ "$1" = 'set_variables' ]; then
+    return;
+fi
+
+
 __install_mamba () {
     (
         set -e
-
         if [[ "$OSTYPE" == "linux-gnu"* ]]; then
            if [[ "$(uname -m)" == "x86_64" ]]; then
                local __mamba_url='https://conda.anaconda.org/conda-forge/linux-64/micromamba-0.24.0-0.tar.bz2'
@@ -93,12 +111,6 @@ __install_mamba () {
 __install_crosshair () {
     (
         set -e
-        local __env_name=$(grep 'name:' ${__base}/environment.yml | awk '{ print $2 }')
-        if [ -z "${__env_name}" ]; then
-            echo "Error: Field 'name' in ${__base}/environment.yml could not be decoded."
-            return 1
-        fi
-        # source ${__base}/.micromambarc
         __init_mamba
         micromamba activate ${__env_name}
         echo "Installing 'crosshair' into environment '${__env_name}'."
@@ -125,17 +137,11 @@ __install_crosshair () {
 __install_xerus () {
     (
         set -e
-        local __env_name=$(grep 'name:' ${__base}/environment.yml | awk '{ print $2 }')
-        if [ -z "${__env_name}" ]; then
-            echo "Error: Field 'name' in ${__base}/environment.yml could not be decoded."
-            return 1
-        fi
         local __xerus_branch=$(grep 'XERUS_BRANCH:' ${__base}/environment.yml | awk '{ print $2 }')
         if [ -z "${__xerus_branch}" ]; then
             echo "Error: Variable 'XERUS_BRANCH' in ${__base}/environment.yml could not be decoded."
             return 1
         fi
-        # source ${__base}/.micromambarc
         __init_mamba
         micromamba activate ${__env_name}
         echo "Installing branch 'xerus/${__xerus_branch}' into environment '${__env_name}'."
@@ -190,44 +196,15 @@ EOF
 }
 
 
-__print_help () {
-    echo    'Usage: source setup [SUBCOMMAND]'
-    echo    'Set up a virtual environment for this research project.'
-    echo -e 'If COMMAND is not specified, activate the environment.\n'
-    echo    'Subcommands:'
-    echo -e '  install mamba\t\tInstall micromamba and create the environment.'
-    echo -e '  install xerus\t\tInstall xerus into the environment.'
-    echo -e '  update \t\tUpdate the environment.'
-    echo -e '  purge  \t\tUninstall micromamba and remove the environment.'
-}
-
-
-if [ -z "$1" ]; then
-    if [ -f ${__base}/micromamba ] && [ -d ${__base}/.micromamba ]; then
-        # source ${__base}/.micromambarc
-        __init_mamba
-        micromamba activate $(grep 'name:' ${__base}/environment.yml | awk '{ print $2 }')
-        export CONDA_PREFIX="${__base}/.micromamba"
-        export CONDA_EXE="${__base}/micromamba"
-    else
-        echo "Could not find micromamba. Please run 'source setup install' first."
-    fi
-elif [ "$1" = 'install' -a "$2" = "mamba" ]; then
+if [ "$1" = 'install' -a "$2" = "mamba" ]; then
     __install_mamba
 elif [ "$1" = 'install' -a "$2" = "crosshair" ]; then
     __install_crosshair
 elif [ "$1" = 'install' -a "$2" = "xerus" ]; then
     __install_xerus
-elif [ "$1" = 'update' ]; then
-    # source ${__base}/.micromambarc
-    __init_mamba
-    micromamba update -y -f environment.yml
 elif [ "$1" = 'purge' ]; then
     rm -rf ${__base}/micromamba ${__base}/.micromamba ${__base}/.micromambarc
-else
-    __print_help
 fi
 
-
-unset -f __init_mamba __install_mamba __install_xerus __print_help
-unset __sourced __shell __base
+unset -f __install_mamba __install_crosshair __install_xerus
+source deactivate

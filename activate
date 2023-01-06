@@ -1,52 +1,4 @@
-case $- in
-    *i*) ;;
-      *) echo "'source setup' requires an interactive session."; return 1;;
-esac
-
-if [ -n "$ZSH_VERSION" ]; then
-    case $ZSH_EVAL_CONTEXT in *:file) __sourced=true;; esac
-elif [ -n "$KSH_VERSION" ]; then
-    [ "$(cd -- "$(dirname -- "$0")" && pwd -P)/$(basename -- "$0")" != "$(cd -- "$(dirname -- "${.sh.file}")" && pwd -P)/$(basename -- "${.sh.file}")" ] && __sourced=true
-elif [ -n "$BASH_VERSION" ]; then
-    (return 0 2>/dev/null) && __sourced=true
-else # All other shells: examine $0 for known shell binary filenames.
-    # Detects `sh` and `dash`; add additional shell filenames as needed.
-    case ${0##*/} in sh|-sh|dash|-dash) __sourced=true;; esac
-fi
-if [ -z "${__sourced}" ]; then
-    echo "This script has to be sourced.";
-    exit 1;
-fi
-
-if [ -x "$(command -v realpath &>/dev/null)" ]; then
-    echo "Command 'realpath' could not be found.";
-    return 1;
-fi
-
-if [ -n "$ZSH_VERSION" ]; then
-    __shell=zsh;
-    __base=$(realpath $(dirname ${0}));
-elif [ -n "$BASH_VERSION" ]; then
-    __shell=bash;
-    __base=$(realpath $(dirname ${BASH_SOURCE[0]}));
-else
-    echo "This script requires a 'bash' or 'zsh'.";
-    return 1;
-fi
-
-__env_name=$(grep 'name:' ${__base}/environment.yml | awk '{ print $2 }')
-if [ -z "${__env_name}" ]; then
-    echo "Error: Field 'name' in ${__base}/environment.yml could not be decoded."
-    return 1
-fi
-__mamba_root_prefix=${__base}/.micromamba/envs/${__env_name};
-
-
-__init_mamba () {
-    export MAMBA_EXE=${__base}/micromamba;
-    export MAMBA_ROOT_PREFIX=${__base}/.micromamba;
-    eval "$(${__base}/micromamba shell hook --shell ${__shell} --prefix ${__base}/.micromamba)"
-}
+source setup set_variables
 
 if [ "${#}" -eq "0" -o "${#}" -eq "1" -a "${1}" = "${__mamba_root_prefix}" ]; then
     if [ -f ${__base}/micromamba ] && [ -d ${__base}/.micromamba ]; then
@@ -55,11 +7,8 @@ if [ "${#}" -eq "0" -o "${#}" -eq "1" -a "${1}" = "${__mamba_root_prefix}" ]; th
         export CONDA_PREFIX="${__base}/.micromamba"
         export CONDA_EXE="${__base}/micromamba"
     else
-        echo "Could not find micromamba. Please run 'source setup install' first."
+        echo "Could not find micromamba. Please run 'source setup install mamba' first."
     fi
 else
     return 1;
 fi
-
-unset -f __init_mamba
-unset __sourced __shell __base __env_name __mamba_root_prefix
