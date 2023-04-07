@@ -1,15 +1,18 @@
+from typing import cast
+
 import numpy as np
 from joblib import Parallel, delayed
 
-from .problem import NonnegativeInt, PositiveInt, Problem
+from .problem import PositiveInt, FloatArray, Problem
 from .parametric_pde_sampling.problem.darcy import Problem as _DarcyProblem
 from .parametric_pde_sampling.compute_orthogonalization import get_mass_matrix, get_stiffness_matrix, cholesky
 
 
 class DarcyProblem(Problem):
-    def __init__(self, parameters: dict) -> None:
+    def __init__(self, parameters: dict):
         super().__init__(parameters)
-        self.__order = parameters["order"]
+        assert parameters["order"] > 0
+        self.__order = cast(PositiveInt, parameters["order"])
         self.distribution = parameters["distribution"]
         self.transformation = parameters["transformation"]
         self.jobs = parameters["jobs"]
@@ -46,27 +49,30 @@ class DarcyProblem(Problem):
 
         self.FEDimension = self.FEProblem.space.dim()
         if self.transformation in ["none", "orthogonalisation"]:
-            self.__dimension = self.FEDimension
+            assert self.FEDimension > 0
+            self.__dimension = cast(PositiveInt, self.FEDimension)
         elif self.transformation == "integral":
-            self.__dimension = 1
+            self.__dimension = cast(PositiveInt, 1)
         else:
             raise ValueError(f"Unknown transformation '{self.transformation}'")
 
     @property
-    def order(self):
+    def order(self) -> PositiveInt:
         return self.__order
 
     @property
-    def dimension(self):
+    def dimension(self) -> PositiveInt:
         return self.__dimension
 
-    def compute_sample(self, salt: NonnegativeInt, size: PositiveInt, offset: NonnegativeInt) -> tuple[np.ndarray]:
+    def compute_sample(self, salt: int, size: int, offset: int) -> tuple[FloatArray, FloatArray]:
+        assert salt >= 0 and size > 0 and offset >= 0
         rng = np.random.default_rng(salt)
-        assert self.distribution in ["lognormal", "uniform"]
         if self.distribution == "lognormal":
             points = rng.standard_normal((size, self.order))[offset:]
         elif self.distribution == "uniform":
             points = rng.uniform(-1, 1, (size, self.order))[offset:]
+        else:
+            raise ValueError("'compute_sample' is only implemented for uniform and lognormal distributions")
 
         values = np.array(Parallel(n_jobs=self.jobs)(map(delayed(self.FEProblem.solution), points)), dtype=np.float64)
         assert values.shape == (size - offset, self.FEDimension)

@@ -13,20 +13,20 @@ FloatArray = NDArray[np.float_]
 class Problem(metaclass=ABCMeta):
     """Represents a problems for which a data set can be generated."""
 
-    def __init__(self, parameters: dict) -> None:
+    def __init__(self, parameters: dict):
         pass
 
     @abstractproperty
-    def order(self) -> int:
+    def order(self) -> PositiveInt:
         """Return the number of variables the model depends on."""
         pass
 
     @abstractproperty
-    def dimension(self) -> int:
+    def dimension(self) -> PositiveInt:
         """Return the dimension of the output of the model."""
         pass
 
     @abstractmethod
-    def compute_sample(self, salt: NonnegativeInt, size: PositiveInt, offset: NonnegativeInt) -> tuple[FloatArray]:
+    def compute_sample(self, salt: int, size: int, offset: int) -> tuple[FloatArray, FloatArray]:
         """Compute a sample of model evaluations."""
         pass

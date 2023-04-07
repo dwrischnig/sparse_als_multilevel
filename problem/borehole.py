@@ -1,6 +1,8 @@
+from typing import cast
+
 import numpy as np
 
-from .problem import NonnegativeInt, PositiveInt, FloatArray, Problem
+from .problem import PositiveInt, FloatArray, Problem
 
 
 class BoreholeProblem(Problem):
@@ -10,10 +12,10 @@ class BoreholeProblem(Problem):
     Reference: https://uqworld.org/t/borehole-function/60
     """
 
-    def __init__(self, parameters: dict) -> None:
+    def __init__(self, parameters: dict):
         super().__init__(parameters)
-        self.__order = 8
-        self.__dimension = 1
+        self.__order = cast(PositiveInt, 8)
+        self.__dimension = cast(PositiveInt, 1)
         self.parameterIntervals = np.array(
             [
                 (0.05, 0.15),  # Radius of borehole [m]
@@ -28,14 +30,16 @@ class BoreholeProblem(Problem):
         ).T
 
     @property
-    def order(self):
+    def order(self) -> PositiveInt:
         return self.__order
 
     @property
-    def dimension(self):
+    def dimension(self) -> PositiveInt:
         return self.__dimension
 
-    def compute_sample(self, salt: NonnegativeInt, size: PositiveInt, offset: NonnegativeInt) -> tuple[np.ndarray]:
+    def compute_sample(self, salt: int, size: int, offset: int) -> tuple[FloatArray, FloatArray]:
+        assert salt >= 0 and size > 0 and offset >= 0
+
         def transform(points: FloatArray) -> FloatArray:
             assert points.ndim == 2
             assert np.all(-1 <= points) and np.all(points <= 1)

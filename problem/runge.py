@@ -1,7 +1,9 @@
 """Provides an abstract base class for problems for which data sets can be generated."""
+from typing import cast
+
 import numpy as np
 
-from .problem import NonnegativeInt, PositiveInt, Problem, FloatArray
+from .problem import PositiveInt, FloatArray, Problem
 
 
 class RungeProblem(Problem):
@@ -10,15 +12,16 @@ class RungeProblem(Problem):
     @property
     def order(self) -> PositiveInt:
         """Return the number of variables the model depends on."""
-        return 1
+        return cast(PositiveInt, 1)
 
     @property
     def dimension(self) -> PositiveInt:
         """Return the dimension of the output of the model."""
-        return 1
+        return cast(PositiveInt, 1)
 
-    def compute_sample(self, salt: NonnegativeInt, size: PositiveInt, offset: NonnegativeInt) -> tuple[FloatArray]:
+    def compute_sample(self, salt: int, size: int, offset: int) -> tuple[FloatArray, FloatArray]:
         """Compute a sample of model evaluations."""
+        assert salt >= 0 and size > 0 and offset >= 0
 
         def runge(points):
             assert points.shape[1] == 1

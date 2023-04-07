@@ -1,6 +1,8 @@
+from typing import cast
+
 import numpy as np
 
-from .problem import NonnegativeInt, PositiveInt, Problem, FloatArray
+from .problem import PositiveInt, FloatArray, Problem
 
 
 class GaussianProblem(Problem):
@@ -8,17 +10,20 @@ class GaussianProblem(Problem):
 
     def __init__(self, parameters: dict) -> None:
         super().__init__(parameters)
-        self.__order = parameters["order"]
+        assert parameters["order"] > 0
+        self.__order = cast(PositiveInt, parameters["order"])
 
     @property
-    def dimension(self) -> int:
-        return 1
+    def dimension(self) -> PositiveInt:
+        return cast(PositiveInt, 1)
 
     @property
-    def order(self) -> int:
+    def order(self) -> PositiveInt:
         return self.__order
 
-    def compute_sample(self, salt: NonnegativeInt, size: PositiveInt, offset: NonnegativeInt) -> tuple[FloatArray]:
+    def compute_sample(self, salt: int, size: int, offset: int) -> tuple[FloatArray, FloatArray]:
+        assert salt >= 0 and size > 0 and offset >= 0
+
         def gaussian(points):
             # NOTE: The gaussian function gets peakier with increasing order!
             return np.exp(-np.linalg.norm(points, axis=1) ** 2)

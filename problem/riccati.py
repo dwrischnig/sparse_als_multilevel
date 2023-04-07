@@ -1,7 +1,9 @@
+from typing import cast
+
 import numpy as np
 from scipy.linalg import solve_continuous_are
 
-from .problem import NonnegativeInt, PositiveInt, Problem
+from .problem import PositiveInt, FloatArray, Problem
 
 
 class RiccatiProblem(Problem):
@@ -11,20 +13,22 @@ class RiccatiProblem(Problem):
 
     def __init__(self, parameters: dict) -> None:
         super().__init__(parameters)
-        self.__order = parameters["order"]
+        assert parameters["order"] > 0
+        self.__order = cast(PositiveInt, parameters["order"])
         self.diffusivity = parameters["diffusivity"]
         self.costParameter = parameters["cost parameter"]
         self.boundaryType = parameters["boundary type"]
 
     @property
-    def dimension(self) -> int:
-        return 1
+    def dimension(self) -> PositiveInt:
+        return cast(PositiveInt, 1)
 
     @property
-    def order(self) -> int:
+    def order(self) -> PositiveInt:
         return self.__order
 
-    def compute_sample(self, salt: NonnegativeInt, size: PositiveInt, offset: NonnegativeInt) -> tuple[np.ndarray]:
+    def compute_sample(self, salt: int, size: int, offset: int) -> tuple[FloatArray, FloatArray]:
+        assert salt >= 0 and size > 0 and offset >= 0
         rng = np.random.default_rng(salt)
         points = rng.uniform(-1, 1, (size, self.order))[offset:]
         *_, Pi = self.__riccati_matrices(self.order, self.diffusivity, self.costParameter, self.boundaryType)
@@ -55,7 +59,6 @@ class RiccatiProblem(Problem):
 
         Author: Leon Sallandt
         """
-        assert _boundary in ["Dirichlet", "Neumann"]
         domain = (-1, 1)
         s = np.linspace(*domain, num=_n)  # gridpoints
         A = -2 * np.eye(_n) + np.eye(_n, k=1) + np.eye(_n, k=-1)
@@ -66,6 +69,8 @@ class RiccatiProblem(Problem):
             h = (domain[1] - domain[0]) / (_n - 1)  # step size in space
             A[[0, -1], [1, -2]] *= 2
             Q[[0, -1], [0, -1]] /= 2
+        else:
+            raise ValueError("only Dirichlet and Neumann conditions are defined")
         A *= _nu / h**2
         Q *= h
         B = ((-0.4 < s) & (s < 0.4)).astype(float).reshape(-1, 1)
