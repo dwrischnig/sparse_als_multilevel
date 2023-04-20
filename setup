@@ -104,6 +104,13 @@ __install_mamba () {
         # source ${__base}/.micromambarc
         __init_mamba
         micromamba create -y -f environment.yml
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            if [[ ! -f "/opt/homebrew/opt/libomp/lib/libomp.dylib" ]]; then
+                brew install libomp
+            fi [[ ! -f "${__mamba_root_prefix}/lib/libomp.dylib" ]]; then
+                ln -s /opt/homebrew/opt/libomp/lib/libomp.dylib ${__mamba_root_prefix}/lib/libomp.dylib
+            fi
+        fi
     )
 }
 

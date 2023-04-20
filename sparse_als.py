@@ -27,14 +27,17 @@ class SparseALS(object):
         self,
         measures: list[FloatArray],
         values: FloatArray,
-        weights: list[FloatArray],
+        weights: FloatArray,
+        weight_sequences: list[FloatArray],
         components: list[FloatArray] | None = None,
         corePosition: NonNegativeInt | None = None,
     ):
         self.__initialised = False
         self.measures = measures
-        self.values = values
-        self.weights = weights
+        for measure in self.measures:
+            measure *= (weights ** (0.5 / len(measures)))[:, None]
+        self.values = np.sqrt(weights) * values
+        self.weight_sequences = weight_sequences
         if components is None:
             assert corePosition is None
             components = [np.eye(dimension, 1)[None] for dimension in self.dimensions]
@@ -49,10 +52,16 @@ class SparseALS(object):
         # This uses that for corePosition == 0, stack[corePosition-1] = stack[-1].
         while self.corePosition > 0:
             self.move_core("left")
-        self.lambdas = [0] * self.order
-        self.densities = [1.0] * self.order
+        self.regularisationParameters = [0] * self.order
+        self.componentDensities = [1.0] * self.order
         self.sweepDirection = "right"
         self.__initialised = True
+
+    def weight_sequence_sharpness(self) -> list[float]:
+        result = []
+        for measure, weight_sequence in zip(self.measures, self.weight_sequences):
+            result.append(np.max(np.max(abs(measure), axis=0) / weight_sequence))
+        return result
 
     @property
     def measures(self) -> list[FloatArray]:
@@ -60,8 +69,10 @@ class SparseALS(object):
 
     @measures.setter
     def measures(self, measures: list[FloatArray]):
-        if hasattr(self, "values") or hasattr(self, "weights"):
-            raise AttributeError("'SparseALS' object attribute 'measures' must be set before 'values' and 'weights")
+        if hasattr(self, "values") or hasattr(self, "weight_sequences"):
+            raise AttributeError(
+                "'SparseALS' object attribute 'measures' must be set before 'values' and 'weight_sequences"
+            )
         if hasattr(self, "measures"):
             raise AttributeError("'SparseALS' object attribute 'measures' is read-only")
         if not (
@@ -92,27 +103,30 @@ class SparseALS(object):
         self.__values = values
 
     @property
-    def weights(self) -> list[FloatArray]:
-        return self.__weights
+    def weight_sequences(self) -> list[FloatArray]:
+        return self.__weight_sequences
 
-    @weights.setter
-    def weights(self, weights: list[FloatArray]):
-        if hasattr(self, "weights"):
-            raise AttributeError("'SparseALS' object attribute 'weights' is read-only")
+    @weight_sequences.setter
+    def weight_sequences(self, weight_sequences: list[FloatArray]):
+        if hasattr(self, "weight_sequences"):
+            raise AttributeError("'SparseALS' object attribute 'weight_sequences' is read-only")
         if not (
-            len(weights) > 0
-            and all(w.ndim == 1 and w.shape[0] > 0 and np.all(np.isfinite(w)) and np.all(w >= 0) for w in weights)
+            len(weight_sequences) > 0
+            and all(
+                w.ndim == 1 and w.shape[0] > 0 and np.all(np.isfinite(w)) and np.all(w >= 0) for w in weight_sequences
+            )
         ):
-            raise ValueError("'weights' must be a sequence of finite, non-negative, one-dimensional arrays")
+            raise ValueError("'weight_sequences' must be a sequence of finite, non-negative, one-dimensional arrays")
         if not hasattr(self, "measures"):
-            raise ValueError("'SparseALS' object attribute 'measures' must be set before 'weights'")
+            raise ValueError("'SparseALS' object attribute 'measures' must be set before 'weight_sequences'")
         if not (
-            len(weights) == len(self.measures) and all(w.shape == (m.shape[1],) for w, m in zip(weights, self.measures))
+            len(weight_sequences) == len(self.measures)
+            and all(w.shape == (m.shape[1],) for w, m in zip(weight_sequences, self.measures))
         ):
-            raise ValueError("'weights' is incompatible with 'SparseALS' object attributes 'measures'")
-        if not all(np.all(w >= np.max(abs(m), axis=0)) for w, m in zip(weights, self.measures)):
-            raise ValueError("'weights' must be larger than the sup norm of the basis functions")
-        self.__weights = weights
+            raise ValueError("'weight_sequences' is incompatible with 'SparseALS' object attributes 'measures'")
+        if not all(np.all(w >= np.max(abs(m), axis=0)) for w, m in zip(weight_sequences, self.measures)):
+            raise ValueError("'weight_sequences' must be larger than the sup norm of the basis functions")
+        self.__weight_sequences = weight_sequences
 
     @property
     def corePosition(self) -> NonNegativeInt:
@@ -142,7 +156,7 @@ class SparseALS(object):
     @cached_property
     def dimensions(self) -> list[PositiveInt]:
         """Return the dimensions of the tensor train."""
-        return [cast(PositiveInt, w.size) for w in self.weights]
+        return [cast(PositiveInt, w.size) for w in self.weight_sequences]
 
     @property
     def ranks(self) -> list[PositiveInt]:
@@ -329,7 +343,7 @@ class SparseALS(object):
             # Since Q.shape == (dimension * rightRank, newRank), we need kron(measures, stack).
             self.__stack[k] = kron_dot_qpm(self.measures[k], self.__stack[k + 1], Q)
             self.__stack[k - 1] = None
-            self.__weightStack[k] = diag_kron_conjugate_qpm(self.weights[k], self.__weightStack[k + 1], Q)
+            self.__weightStack[k] = diag_kron_conjugate_qpm(self.weight_sequences[k], self.__weightStack[k + 1], Q)
             self.__weightStack[k - 1] = None
 
         elif direction == "right":
@@ -355,7 +369,7 @@ class SparseALS(object):
             # Since Q.shape == (leftRank * dimension, r), we need kron(stack, measures).
             self.__stack[k] = kron_dot_qpm(self.__stack[k - 1], self.measures[k], Q)
             self.__stack[k + 1] = None
-            self.__weightStack[k] = diag_kron_conjugate_qpm(self.__weightStack[k - 1], self.weights[k], Q)
+            self.__weightStack[k] = diag_kron_conjugate_qpm(self.__weightStack[k - 1], self.weight_sequences[k], Q)
             self.__weightStack[k + 1] = None
 
     @deal.pre(lambda self, set: self.is_canonicalised())
@@ -364,7 +378,7 @@ class SparseALS(object):
             assert np.ndim(set) == 1
         k = self.corePosition
 
-        weights = np.kron(self.__weightStack[k - 1], self.weights[k])  # type: ignore
+        weights = np.kron(self.__weightStack[k - 1], self.weight_sequences[k])  # type: ignore
         weights = np.kron(weights, self.__weightStack[k + 1])
         lOp = self.__stack[k - 1][set]  # type: ignore
         eOp = self.measures[k][set]
@@ -386,8 +400,8 @@ class SparseALS(object):
         coreCol = model.active_
         core = sps.coo_matrix((coreData, (coreRow, coreCol)), shape=(1, len(weights)))
         self.set_component(position=k, component=core, shape=(lOp.shape[1], eOp.shape[1], rOp.shape[1]))
-        self.lambdas[k] = model.alpha_
-        self.densities[k] = len(model.active_) / len(weights)
+        self.regularisationParameters[k] = model.alpha_
+        self.componentDensities[k] = len(model.active_) / len(weights)
 
     def step(self, set: slice = slice(None)):
         self.microstep(set)

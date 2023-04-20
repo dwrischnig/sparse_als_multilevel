@@ -14,19 +14,19 @@ class Problem(metaclass=ABCMeta):
     """Represents a problems for which a data set can be generated."""
 
     def __init__(self, parameters: dict):
-        pass
+        ...
 
     @abstractproperty
     def order(self) -> PositiveInt:
-        """Return the number of variables the model depends on."""
-        pass
+        """The number of variables the model depends on."""
+        ...
 
     @abstractproperty
     def dimension(self) -> PositiveInt:
-        """Return the dimension of the output of the model."""
-        pass
+        """The dimension of the models output."""
+        ...
 
     @abstractmethod
     def compute_sample(self, salt: int, size: int, offset: int) -> tuple[FloatArray, FloatArray]:
         """Compute a sample of model evaluations."""
-        pass
+        ...

@@ -1,3 +1,0 @@
-[submodule "vmc_sampling"]
-	path = problem/parametric_pde_sampling
-	url = git@bitbucket.org:trunschk/vmc_sampling.git

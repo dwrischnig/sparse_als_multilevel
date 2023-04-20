@@ -9,7 +9,9 @@ dependencies:
   - joblib
   - matplotlib
   - scikit-learn
+  - tensap
   - tqdm
+  - loguru
   - rich
   - colored
   - ipython
