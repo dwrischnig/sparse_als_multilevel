@@ -337,8 +337,11 @@ class SparseALS(object):
             newMiddleRank = Q.shape[1]
             assert Q.T.shape == (newMiddleRank, rightDimension * rightRank)
             assert C.T.shape == (oldMiddleRank, newMiddleRank)
+            assert Q.nnz == Q.shape[1] <= oldCore.nnz
             self.set_component(position=k, component=Q.T, shape=(newMiddleRank, rightDimension, rightRank))
-            self.set_component(position=k - 1, component=newCore @ C.T, shape=(leftRank, leftDimension, newMiddleRank))
+            newCore = newCore @ C.T
+            assert newCore.nnz == oldCore.nnz
+            self.set_component(position=k - 1, component=newCore, shape=(leftRank, leftDimension, newMiddleRank))
 
             # Since Q.shape == (dimension * rightRank, newRank), we need kron(measures, stack).
             self.__stack[k] = kron_dot_qpm(self.measures[k], self.__stack[k + 1], Q)
@@ -363,8 +366,11 @@ class SparseALS(object):
             newMiddleRank = Q.shape[1]
             assert Q.shape == (leftRank * leftDimension, newMiddleRank)
             assert C.shape == (newMiddleRank, oldMiddleRank)
+            assert Q.nnz == Q.shape[1] <= oldCore.nnz
             self.set_component(position=k, component=Q, shape=(leftRank, leftDimension, newMiddleRank))
-            self.set_component(position=k + 1, component=C @ newCore, shape=(newMiddleRank, rightDimension, rightRank))
+            newCore = C @ newCore
+            assert newCore.nnz == oldCore.nnz
+            self.set_component(position=k + 1, component=newCore, shape=(newMiddleRank, rightDimension, rightRank))
 
             # Since Q.shape == (leftRank * dimension, r), we need kron(stack, measures).
             self.__stack[k] = kron_dot_qpm(self.__stack[k - 1], self.measures[k], Q)
@@ -392,7 +398,9 @@ class SparseALS(object):
         #       This would be more efficient.
         # TODO: Check that these operators provide the API defined by sps.linalg.LinearOperator
         #       and that lasso_lars_cv works for all these operators.
-        model = lasso_lars_cv(operator, self.values[set], cv=10)
+        cv = 10
+        max_features = self.__components[k].nnz + 1
+        model = lasso_lars_cv(operator, self.values[set], cv=cv, max_features=max_features)
         assert model.alpha_ >= 0
         assert len(model.active_) > 0
         coreData = model.coef_ / weights[model.active_]

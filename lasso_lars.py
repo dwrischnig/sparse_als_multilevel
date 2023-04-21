@@ -472,6 +472,7 @@ def lasso_lars_cv(
     min_alpha=np.finfo(np.float64).eps,
     cv=10,
     max_iter=5000,
+    max_features=None,
     overtrainingSteps=3,
     overtrainingFactor=2,
     verbose=False,
@@ -483,7 +484,9 @@ def lasso_lars_cv(
     n_samples, n_features = X.shape
     assert np.shape(y) == (n_samples,)
     assert n_samples % cv == 0
-    max_features = min(max_iter, n_features)
+    if max_features is None:
+        max_features = n_features
+    max_features = min(max_iter, max_features)
 
     lars = []
     alphas = []

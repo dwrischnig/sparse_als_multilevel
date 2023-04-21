@@ -1,4 +1,5 @@
 __pycache__
+*.icloud
 *.sw[pon]
 *.np[yz]
 micromamba
