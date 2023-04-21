@@ -11,6 +11,8 @@ from numpy.typing import NDArray
 from rich.console import Console
 from rich.table import Table
 
+import autoPDB  # noqa: F401
+
 
 console = Console()
 
@@ -46,10 +48,10 @@ def load_experiments(data_path: str | Path, pattern: str) -> list[Experiment]:
     for path in data_path.glob("*.npz"):
         try:
             parameters = string_to_dict(path.name, pattern)
-        except AttributeError:
+            for key in parameters:
+                parameters[key] = field_types[key](parameters[key])
+        except (AttributeError, ValueError):
             continue
-        for key in parameters:
-            parameters[key] = field_types[key](parameters[key])
         z = np.load(path)
         assert set(z.keys()) == {"testErrors", "trainingErrors", "times", "dofs"}
         parameters["test_set_errors"] = z["testErrors"]
@@ -91,7 +93,8 @@ def create_table(
         row_experiments = [e for e in experiments if row_key(e) == row]
         for column_idx, column in enumerate(columns):
             entry_values = [value_key(e) for e in row_experiments if column_key(e) == column]
-            values[row_idx, column_idx] = (np.mean(entry_values), np.std(entry_values))
+            if len(entry_values) > 0:
+                values[row_idx, column_idx] = (np.mean(entry_values), np.std(entry_values))
 
     def row_strings(values, bold_mask):
         def value_string(value):
