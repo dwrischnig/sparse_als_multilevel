@@ -29,11 +29,11 @@ def rotg(x):
 
     x is modified to contain x[0] = r >= 0 and x[1] = 0.
     """
-    if np.all(x==0):
-        return np.array([1,0])  # c, s
+    if np.all(x == 0):
+        return np.array([1, 0])  # c, s
     else:
         r = np.linalg.norm(x)
-        cs = x/r
+        cs = x / r
         x[:] = (r, 0)
         return cs
 
@@ -48,10 +48,10 @@ def rot(xy, cs):
     """
     assert xy.ndim == 2 and xy.shape[0] == 2 and cs.shape == (2,)
 
-    c,s = cs
-    x,y = xy
-    tmp = c*x + s*y
-    y[:] = c*y - s*x
+    c, s = cs
+    x, y = xy
+    tmp = c * x + s * y
+    y[:] = c * y - s * x
     x[:] = tmp
 
 
@@ -60,15 +60,15 @@ def cholesky_delete(L, go_out):
     Remove a row and column from the cholesky factorization.
     """
     # Delete row go_out.
-    L[go_out:-1] = L[go_out+1:]
+    L[go_out:-1] = L[go_out + 1 :]
     # The resulting matrix has non-zero elements in the off-diagonal entries L[i,i+1] for i>=go_out.
 
     n = L.shape[0]
-    for i in range(go_out, n-1):
+    for i in range(go_out, n - 1):
         # Rotate the two column vectors L[i:,i] and L[i:,i+1].
-        #NOTE: rotg gives the rotation that provides a positive diagonal entry.
-        cs = rotg(L[i,i:i+2])
-        rot(L[i+1:,i:i+2].T, cs)
+        # NOTE: rotg gives the rotation that provides a positive diagonal entry.
+        cs = rotg(L[i, i : i + 2])
+        rot(L[i + 1 :, i : i + 2].T, cs)
 
 
 def est_cond_triangular(L):
@@ -81,7 +81,8 @@ def est_cond_triangular(L):
     .. [2] https://github.com/PetterS/SuiteSparse/blob/master/CHOLMOD/Cholesky/cholmod_rcond.c
     """
     assert L.ndim == 2 and L.shape[0] == L.shape[1]
-    if L.shape[0] == 0: return 0
+    if L.shape[0] == 0:
+        return 0
     diagL = abs(np.diag(L))
     return np.max(diagL) / np.min(diagL)
 
@@ -102,12 +103,15 @@ class LarsState(object):
            <https://en.wikipedia.org/wiki/Lasso_(statistics)>`_
 
     """
+
     def __init__(self, X, y, max_features, verbose=False, X_test=None):
         """
         max_features <= max_iter
         """
         # self.tiny = np.finfo(np.float32).tiny  # Used to avoid division by 0.
-        self.tiny = np.finfo(np.float64).tiny  # Used to avoid division by 0 without perturbing other computations too much. (Note that x+self.tiny != x only if x is tiny itself.)
+        self.tiny = np.finfo(
+            np.float64
+        ).tiny  # Used to avoid division by 0 without perturbing other computations too much. (Note that x+self.tiny != x only if x is tiny itself.)
         self.condition_threshold = 1e8
 
         n_samples, n_features = X.shape
@@ -115,31 +119,39 @@ class LarsState(object):
         self.max_features = min(max_features, n_features)
         self.verbose = verbose
 
-        self.active = []  #NOTE: COEF AND ACTIVE ALWAYS HAVE THE SAME LENGTH
-        self.inactive = list(range(n_features))  #NOTE: ALWAYS SORTED
+        self.active = []  # NOTE: COEF AND ACTIVE ALWAYS HAVE THE SAME LENGTH
+        self.inactive = list(range(n_features))  # NOTE: ALWAYS SORTED
 
         self.X = X
         self.X_test = X_test
         assert X_test is None or X.shape == X_test.shape
-        self.y = y  #TODO: just relevant for tests
+        self.y = y  # TODO: just relevant for tests
 
         self.coef = np.zeros((0,))
 
-        self.Cov = np.asarray(self.XTy(y))      # Cov[n_active:] contains the covariances of the inactive covariates. Cov[:n_active] = 0.
+        self.Cov = np.asarray(
+            self.XTy(y)
+        )  # Cov[n_active:] contains the covariances of the inactive covariates. Cov[:n_active] = 0.
         assert self.Cov.shape == (n_features,)
-        self.signCov = np.empty(n_features, dtype=np.int8)  # sign_active[:n_active] holds the sign of the covariance of active covariates.
-        assert self.signCov.shape == (n_features,)  #TODO: maybe signCov can be eliminated all together
+        self.signCov = np.empty(
+            n_features, dtype=np.int8
+        )  # sign_active[:n_active] holds the sign of the covariance of active covariates.
+        assert self.signCov.shape == (n_features,)  # TODO: maybe signCov can be eliminated all together
         self.C = np.max(np.fabs(self.Cov))  # covariance of the active covariates
         self.CData = np.inf
         self.prevCData = np.inf
 
-        self.L = np.zeros((max(int(0.1*max_features), 1), max(int(0.1*max_features), 1)), dtype=y.dtype)  # will hold the cholesky factorization. Only lower part is referenced.
-        self.solve_cholesky, = get_lapack_funcs(('potrs',), (self.L,))
-        self.G = np.zeros((max(int(0.1*max_features), 1), n_features), dtype=y.dtype)   # G[i] will hold X[:,active[i]].T @ X
+        self.L = np.zeros(
+            (max(int(0.1 * max_features), 1), max(int(0.1 * max_features), 1)), dtype=y.dtype
+        )  # will hold the cholesky factorization. Only lower part is referenced.
+        (self.solve_cholesky,) = get_lapack_funcs(("potrs",), (self.L,))
+        self.G = np.zeros(
+            (max(int(0.1 * max_features), 1), n_features), dtype=y.dtype
+        )  # G[i] will hold X[:,active[i]].T @ X
 
         self.drop = False
 
-    #NOTE: Methods just needed for testing and profiling.
+    # NOTE: Methods just needed for testing and profiling.
     def XTy(self, y):
         if self.X_test is None:
             return self.X.XTy(y)
@@ -148,6 +160,7 @@ class LarsState(object):
             ret_test = self.X_test.XTy(y)
             assert np.allclose(ret, ret_test)
             return ret
+
     def XTX(self, C_idx):
         if self.X_test is None:
             return self.X.XTX(C_idx)
@@ -156,17 +169,21 @@ class LarsState(object):
             ret_test = self.X_test.XTX(C_idx)
             assert np.allclose(ret, ret_test)
             return ret
+
     def add_L(self):
-        if self.verbose: print("add_L")
+        if self.verbose:
+            print("add_L")
         n_active = len(self.active)
-        self.L[n_active, :n_active] = self.G[n_active,self.active]  # Y.T@y
-        linalg.solve_triangular(self.L[:n_active, :n_active], self.L[n_active, :n_active], lower=1, overwrite_b=True, check_finite=False)  # Solve L@w = Y.T@y. `overwrite_b=True` implies that L[n_active, :n_active] will contain the solution.
+        self.L[n_active, :n_active] = self.G[n_active, self.active]  # Y.T@y
+        linalg.solve_triangular(
+            self.L[:n_active, :n_active], self.L[n_active, :n_active], lower=1, overwrite_b=True, check_finite=False
+        )  # Solve L@w = Y.T@y. `overwrite_b=True` implies that L[n_active, :n_active] will contain the solution.
 
     def check_condition_threshold(self):
         n_active = len(self.active)
         assert np.all(np.isfinite(self.G[:n_active]))
-        assert np.all(np.isfinite(self.L[:n_active,:n_active]))
-        assert est_cond_triangular(self.L[:n_active,:n_active])**2 <= self.condition_threshold
+        assert np.all(np.isfinite(self.L[:n_active, :n_active]))
+        assert est_cond_triangular(self.L[:n_active, :n_active]) ** 2 <= self.condition_threshold
 
     def add_index(self):
         """
@@ -185,7 +202,8 @@ class LarsState(object):
             L@w = Y.T@y    and    z**2 = y.T@y - w.T@w.
 
         """
-        if self.verbose: print("add_index")
+        if self.verbose:
+            print("add_index")
         if len(self.active) == self.max_features:
             raise ConvergenceWarning("Stopping the lars path, as every regressor is active.")
         assert len(self.active) < self.max_features
@@ -197,18 +215,21 @@ class LarsState(object):
             C_idx_inactive = np.argmax(np.fabs(self.Cov[self.inactive]))
             C_idx = self.inactive[C_idx_inactive]
             if abs(self.Cov[C_idx]) == 0:
-                #NOTE: This is probably an index that has been removed earlier.
-                raise ConvergenceWarning("Early stopping the lars path, as every regressor with nonzero covariance would make the system unstable.")
+                # NOTE: This is probably an index that has been removed earlier.
+                raise ConvergenceWarning(
+                    "Early stopping the lars path, as every regressor with nonzero covariance would make the system unstable."
+                )
 
             self.prevCData, self.CData = self.CData, abs(self.Cov[C_idx])
-            #NOTE: lars.C can be updated in every step via self.C -= gamma * AA. This however is numerically unstable.
+            # NOTE: lars.C can be updated in every step via self.C -= gamma * AA. This however is numerically unstable.
             #      The numerical values of the covariances (y.T @ X @ coef) should all be equal but tend to diverge.
             #      In itself this may not pose a problem. But when these covariances fall below those in self.Cov this means
             #      that the updates of Cov bring a numerical error that is greater than the remaining correlation with the regressors.
             # print(f"{self.C:.3e} == {self.CData:.3e} <= {self.prevCData:.3e}")
             if self.CData > self.prevCData:
-                raise ConvergenceWarning("Early stopping the lars path, as the remaining covariances fall below the numerical error.")
-
+                raise ConvergenceWarning(
+                    "Early stopping the lars path, as the remaining covariances fall below the numerical error."
+                )
 
             self.signCov[C_idx] = np.sign(self.Cov[C_idx])
             self.Cov[C_idx] = 0
@@ -222,7 +243,7 @@ class LarsState(object):
             # Then the Gershgorin circle theorem gives the following estimate for the eigenvalue EV that is added to this new Gramian:
             #     EV <= ER
             # To estimate the conditon number we need to find the largest eigenvalue.
-            # We can do this with Gershgorin as well (even updating the previous estimate) but for the sake of simplicity we use numpy: 
+            # We can do this with Gershgorin as well (even updating the previous estimate) but for the sake of simplicity we use numpy:
             #     EU = np.linalg.norm(self.G[:n_active,self.active], ord=2)
             # Thus if ER <= self.condition_threshold we will drop this index anyways...
             # An improvement: Let a be a real number and define
@@ -235,12 +256,15 @@ class LarsState(object):
                 # a = 10.0
                 # R *= a**(-np.arange(n_active+1)[::-1])
                 # ER = R[-1] + np.sum(abs(R[:-1]))
-                R = self.XTX(C_idx)[self.active+[C_idx]]
+                R = self.XTX(C_idx)[self.active + [C_idx]]
                 ER = R[-1]
-                EU = np.linalg.norm(self.G[:n_active,self.active], ord=2)
-                CG = EU/ER
+                EU = np.linalg.norm(self.G[:n_active, self.active], ord=2)
+                CG = EU / ER
                 if CG >= self.condition_threshold:
-                    warnings.warn(f"Regressors in active set degenerate. Skipping one with small relative eigenvalue: {{{C_idx}: {1/CG:.2e}}}.", ConvergenceWarning)
+                    warnings.warn(
+                        f"Regressors in active set degenerate. Skipping one with small relative eigenvalue: {{{C_idx}: {1/CG:.2e}}}.",
+                        ConvergenceWarning,
+                    )
                     continue
 
             # Ensure that G and L have the capacity for a new row.
@@ -250,16 +274,16 @@ class LarsState(object):
                 assert self.G.shape == (n_active, n_features)
                 assert self.L.shape == (n_active, n_active)
                 old_capacity = n_active
-                new_capacity = min(2*n_active, self.max_features)
-                #NOTE: Pad G and L with zeros. Otherwise they can contain nan's or inf's that fail the assert in check_condition_threshold.
-                self.G = np.pad(self.G, ((0, new_capacity-old_capacity), (0, 0)))
-                self.L = np.pad(self.L, ((0, new_capacity-old_capacity),))
+                new_capacity = min(2 * n_active, self.max_features)
+                # NOTE: Pad G and L with zeros. Otherwise they can contain nan's or inf's that fail the assert in check_condition_threshold.
+                self.G = np.pad(self.G, ((0, new_capacity - old_capacity), (0, 0)))
+                self.L = np.pad(self.L, ((0, new_capacity - old_capacity),))
 
             self.G[n_active] = self.XTX(C_idx)  # Y.T@y
             if n_active > 0:
                 self.add_L()
             yTy = self.G[n_active, C_idx]
-            wTw = np.linalg.norm(self.L[n_active,:n_active]) ** 2
+            wTw = np.linalg.norm(self.L[n_active, :n_active]) ** 2
             self.L[n_active, n_active] = np.sqrt(max(yTy - wTw, 0)) + self.tiny
 
             self.coef = np.append(self.coef, 0)
@@ -268,12 +292,11 @@ class LarsState(object):
 
             idcs_rem = self.remove_ill_conditioned_indices()
             if idcs_rem == [C_idx]:  # The last added regressor causes the system to become ill-conditioned.
-                continue             # We can pretend like it never existed by starting over without increasing n_active.
-            else:                    # In any other case we have added a new index (although `remove_ill_conditioned_indices` may have removed another).
+                continue  # We can pretend like it never existed by starting over without increasing n_active.
+            else:  # In any other case we have added a new index (although `remove_ill_conditioned_indices` may have removed another).
                 break
 
         self.check_condition_threshold()
-
 
     def remove_ill_conditioned_indices(self):
         """
@@ -286,15 +309,17 @@ class LarsState(object):
         eigs_rem = []
         n_active = len(self.active)
         while n_active > 1:
-            #NOTE: The choice of the condition threshold is imporant and influences the quality of our solution. (It directly affects which regressors are added or dropped for good...)
-            if est_cond_triangular(self.L[:n_active,:n_active])**2 <= self.condition_threshold:  # We solve the system L@x=y twice...
+            # NOTE: The choice of the condition threshold is imporant and influences the quality of our solution. (It directly affects which regressors are added or dropped for good...)
+            if (
+                est_cond_triangular(self.L[:n_active, :n_active]) ** 2 <= self.condition_threshold
+            ):  # We solve the system L@x=y twice...
                 break
             # This case happened for n_active == 1 when, in l1_salsa, self.L[0,0] = np.inf.
-            ii = np.argmin(np.diag(self.L[:n_active,:n_active]))
+            ii = np.argmin(np.diag(self.L[:n_active, :n_active]))
 
             cholesky_delete(self.L[:n_active, :n_active], ii)
-            for i in range(ii, n_active-1):
-                self.G[i] = self.G[i+1]
+            for i in range(ii, n_active - 1):
+                self.G[i] = self.G[i + 1]
 
             self.coef = np.delete(self.coef, ii)
             C_idx = self.active.pop(ii)
@@ -302,38 +327,44 @@ class LarsState(object):
             self.Cov[C_idx] = 0  # Drop the index for good.
 
             idcs_rem.append(C_idx)
-            eigs_rem.append(self.L[n_active-1, n_active-1])
+            eigs_rem.append(self.L[n_active - 1, n_active - 1])
 
             n_active -= 1
 
         if len(idcs_rem) > 0:
             n_active = len(self.active)
             max_eig = np.max(np.diag(self.L[:n_active, :n_active]))
-            rel_eigs_rem = "{" + ",".join(f"{idx}: {eig/max_eig:.2e}" for idx,eig in zip(idcs_rem, eigs_rem)) + "}"
-            warnings.warn(f"Regressors in active set degenerate. Removing those with small relative eigenvalues: {rel_eigs_rem}.", ConvergenceWarning)
+            rel_eigs_rem = "{" + ",".join(f"{idx}: {eig/max_eig:.2e}" for idx, eig in zip(idcs_rem, eigs_rem)) + "}"
+            warnings.warn(
+                f"Regressors in active set degenerate. Removing those with small relative eigenvalues: {rel_eigs_rem}.",
+                ConvergenceWarning,
+            )
 
         return idcs_rem
 
     def remove_index(self):
-        if self.verbose: print("remove_index")
+        if self.verbose:
+            print("remove_index")
         self.check_condition_threshold()
 
         n_active = len(self.active)
         idx = np.nonzero(np.fabs(self.coef) < 1e-12)[0][::-1]
         if len(idx) == 0:
-            raise ConvergenceWarning(f"Early stopping the lars path, as a regressor that ought to be removed from the active set has nonzero coefficient.")
+            raise ConvergenceWarning(
+                f"Early stopping the lars path, as a regressor that ought to be removed from the active set has nonzero coefficient."
+            )
         assert np.all(idx[:-1] > idx[1:])
 
         for ii in idx:
             if n_active <= 1:
                 break
             cholesky_delete(self.L[:n_active, :n_active], ii)
-            for i in range(ii, n_active-1):
-                self.G[i] = self.G[i+1]
+            for i in range(ii, n_active - 1):
+                self.G[i] = self.G[i + 1]
             self.coef = np.delete(self.coef, ii)
             C_idx = self.active.pop(ii)
             insort_left(self.inactive, C_idx)
-            self.Cov[C_idx] = self.C*self.signCov[C_idx]
+            self.Cov[C_idx] = self.C * self.signCov[C_idx]
             n_active -= 1
 
         self.remove_ill_conditioned_indices()
@@ -341,24 +372,29 @@ class LarsState(object):
         self.drop = False
 
     def step(self):
-        if self.verbose: print("step")
+        if self.verbose:
+            print("step")
         self.check_condition_threshold()
 
         # least squares solution
         n_active = len(self.active)
         least_squares, _ = self.solve_cholesky(self.L[:n_active, :n_active], self.signCov[self.active], lower=True)
-        AA = 1. / np.sqrt(np.sum(least_squares * self.signCov[self.active]))
+        AA = 1.0 / np.sqrt(np.sum(least_squares * self.signCov[self.active]))
         assert 0 < AA and np.isfinite(AA)
         least_squares *= AA  # w as defined in (2.6)
 
         # equiangular direction of variables in the active set
         corr_eq_dir = least_squares @ self.G[:n_active, self.inactive]  # a as defined in (2.12)
 
-        gamma_hat = min(min_pos((self.C-self.Cov[self.inactive]) / (AA-corr_eq_dir+self.tiny)),
-                        min_pos((self.C+self.Cov[self.inactive]) / (AA+corr_eq_dir+self.tiny)))  # \hat{\gamma} as defined in (2.13)
-        gamma_hat = min(gamma_hat, self.C/AA)  # Stabilizes the algorithm since C/AA is the maximal step size (self.C - gamma_hat*AA == 0).
+        gamma_hat = min(
+            min_pos((self.C - self.Cov[self.inactive]) / (AA - corr_eq_dir + self.tiny)),
+            min_pos((self.C + self.Cov[self.inactive]) / (AA + corr_eq_dir + self.tiny)),
+        )  # \hat{\gamma} as defined in (2.13)
+        gamma_hat = min(
+            gamma_hat, self.C / AA
+        )  # Stabilizes the algorithm since C/AA is the maximal step size (self.C - gamma_hat*AA == 0).
 
-        bOd = - self.coef / (least_squares+self.tiny)  # - \hat{\beta} / \hat{d}
+        bOd = -self.coef / (least_squares + self.tiny)  # - \hat{\beta} / \hat{d}
         gamma_tilde = min_pos(bOd)  # \tilde{\gamma} as defined in (3.5)
         gamma = min(gamma_tilde, gamma_hat)
 
@@ -388,10 +424,12 @@ def lasso_lars(X, y, alpha, max_iter=500, verbose=False, X_test=None):
 
             active = list(sorted(set(prev_active) | set(active)))
             prev_coef = np.zeros(len(active))
-            coef      = np.zeros(len(active))
-            for e,idx in enumerate(active):
-                if idx in pc: prev_coef[e] = pc[idx]
-                if idx in cc: coef[e] = cc[idx]
+            coef = np.zeros(len(active))
+            for e, idx in enumerate(active):
+                if idx in pc:
+                    prev_coef[e] = pc[idx]
+                if idx in cc:
+                    coef[e] = cc[idx]
 
             coef = prev_coef + (prev_alpha - alpha) / (prev_alpha - this_alpha) * (coef - prev_coef)
             this_alpha = alpha
@@ -428,7 +466,17 @@ def lasso_lars(X, y, alpha, max_iter=500, verbose=False, X_test=None):
     return Model
 
 
-def lasso_lars_cv(X, y, min_alpha=np.finfo(np.float64).eps, cv=10, max_iter=5000, overtrainingSteps=3, overtrainingFactor=2, verbose=False, X_test=None):
+def lasso_lars_cv(
+    X,
+    y,
+    min_alpha=np.finfo(np.float64).eps,
+    cv=10,
+    max_iter=5000,
+    overtrainingSteps=3,
+    overtrainingFactor=2,
+    verbose=False,
+    X_test=None,
+):
     """
     max_iter : maximum number of iterations across all folds
     """
@@ -441,16 +489,21 @@ def lasso_lars_cv(X, y, min_alpha=np.finfo(np.float64).eps, cv=10, max_iter=5000
     alphas = []
     residuals = []
     testSetSize = n_samples // cv
-    slc = lambda fold: slice(fold*testSetSize, (fold+1)*testSetSize)
+    slc = lambda fold: slice(fold * testSetSize, (fold + 1) * testSetSize)
 
     class GramedOperator(object):
         def __init__(self, _operator):
             self.operator = _operator
             self._active = dict()
-            self._gramian = np.zeros((max(int(0.1*self.shape[1]), 1), self.shape[1]))
+            self._gramian = np.zeros((max(int(0.1 * self.shape[1]), 1), self.shape[1]))
+
         @property
-        def shape(self): return self.operator.shape
-        def XTy(self, _y): return self.operator.XTy(_y)
+        def shape(self):
+            return self.operator.shape
+
+        def XTy(self, _y):
+            return self.operator.XTy(_y)
+
         @lru_cache(maxsize=None)
         def XTX(self, _index):
             ret = self.operator.XTX(_index)
@@ -458,27 +511,33 @@ def lasso_lars_cv(X, y, min_alpha=np.finfo(np.float64).eps, cv=10, max_iter=5000
             if self._gramian.shape[0] <= n_active:
                 assert self._gramian.shape == (n_active, self.shape[1])
                 old_capacity = n_active
-                new_capacity = min(2*n_active, self.shape[1])
-                self._gramian = np.pad(self._gramian, ((0, new_capacity-old_capacity), (0, 0)), mode="empty")
+                new_capacity = min(2 * n_active, self.shape[1])
+                self._gramian = np.pad(self._gramian, ((0, new_capacity - old_capacity), (0, 0)), mode="empty")
             self._gramian[n_active] = ret
             self._active[_index] = n_active
-            assert len(self._active) == n_active+1
+            assert len(self._active) == n_active + 1
             return ret
+
         def gramian(self, _indices):
             [self.XTX(idx) for idx in _indices]
             Gidcs = [self._active[idx] for idx in _indices]
             return self._gramian[Gidcs][:, _indices]
+
     class StackedOperator(object):
         def __init__(self, _stack):
             self.stack = _stack
             self.n_samples = sum(elem.shape[0] for elem in self.stack)
             self.n_features = self.stack[0].shape[1]
+
         @property
-        def shape(self): return self.n_samples, self.n_features
+        def shape(self):
+            return self.n_samples, self.n_features
+
         @lru_cache(maxsize=None)
         def XTX(self, _index):
             ret = sum(elem.XTX(_index) for elem in self.stack)
             return ret
+
         def XTy(self, _y):
             ret = np.zeros(self.n_features)
             a = 0
@@ -487,9 +546,10 @@ def lasso_lars_cv(X, y, min_alpha=np.finfo(np.float64).eps, cv=10, max_iter=5000
                 ret += elem.XTy(_y[a:o])
                 a = o
             return ret
+
     takes = [GramedOperator(X.take_rows(slc(fold))) for fold in range(cv)]
-    drops = [StackedOperator(takes[:fold]+takes[fold+1:]) for fold in range(cv)]
-    yTys = [np.linalg.norm(y[slc(fold)])**2 for fold in range(cv)]
+    drops = [StackedOperator(takes[:fold] + takes[fold + 1 :]) for fold in range(cv)]
+    yTys = [np.linalg.norm(y[slc(fold)]) ** 2 for fold in range(cv)]
     yTXs = [takes[fold].XTy(y[slc(fold)]) for fold in range(cv)]
 
     def res(fold):
@@ -497,7 +557,7 @@ def lasso_lars_cv(X, y, min_alpha=np.finfo(np.float64).eps, cv=10, max_iter=5000
         i = lars[fold].active
         c = lars[fold].coef
         G = takes[fold].gramian(i)
-        ret = max(yTys[fold] - 2*yTXs[fold][i]@c + c.T@G@c, 0)
+        ret = max(yTys[fold] - 2 * yTXs[fold][i] @ c + c.T @ G @ c, 0)
         tmp = X.take_rows(slc(fold)).error_norm(y[slc(fold)], lars[fold].active, lars[fold].coef)
         assert np.allclose(ret, tmp)
         return ret
@@ -512,7 +572,7 @@ def lasso_lars_cv(X, y, min_alpha=np.finfo(np.float64).eps, cv=10, max_iter=5000
             lars.append(LarsState(drops[fold], tmpy, max_features, verbose=verbose, X_test=X_test.drop_rows(slc(fold))))
         alphas.append([lars[-1].C / n_samples])
         residuals.append([res(fold)])
-        if fold < cv-1:
+        if fold < cv - 1:
             tmpy[slc(fold)] = y[slc(fold)]
     not_falling = np.full(cv, False, dtype=bool)
     minimum = np.full(cv, np.inf, dtype=float)
@@ -520,7 +580,8 @@ def lasso_lars_cv(X, y, min_alpha=np.finfo(np.float64).eps, cv=10, max_iter=5000
     for n_iter in range(max_iter):
         idx = np.argmax([a[-1] for a in alphas])
         alpha = alphas[idx][-1]
-        if alpha <= min_alpha: break
+        if alpha <= min_alpha:
+            break
 
         try:
             if not lars[idx].drop:
@@ -530,7 +591,7 @@ def lasso_lars_cv(X, y, min_alpha=np.finfo(np.float64).eps, cv=10, max_iter=5000
                 lars[idx].remove_index()
         except ConvergenceWarning as w:
             warnings.warn(str(w), ConvergenceWarning)
-            break  #TODO: Don't break but just don select this LarsState again.
+            break  # TODO: Don't break but just don select this LarsState again.
 
         alphas[idx].append(max(lars[idx].C / n_samples, 0))
         residuals[idx].append(res(idx))
@@ -546,23 +607,28 @@ def lasso_lars_cv(X, y, min_alpha=np.finfo(np.float64).eps, cv=10, max_iter=5000
         minimum[idx] = min(minimum[idx], residuals[idx][-1])
         # not_falling[idx] = residuals[idx][-1] > residuals[idx][-2]
         # not_falling[idx] = residuals[idx][-1] > overtraining_ratio*minimum[idx]
-        not_falling[idx] = np.min(residuals[idx][-overtrainingSteps:]) > overtrainingFactor*minimum[idx]
-        if np.count_nonzero(not_falling) > cv//2+cv%2:
-            warnings.warn("Early stopping the lars path, as more than half of the folds have increasing residuals.", ConvergenceWarning)
+        not_falling[idx] = np.min(residuals[idx][-overtrainingSteps:]) > overtrainingFactor * minimum[idx]
+        if np.count_nonzero(not_falling) > cv // 2 + cv % 2:
+            warnings.warn(
+                "Early stopping the lars path, as more than half of the folds have increasing residuals.",
+                ConvergenceWarning,
+            )
             break
     else:
         warnings.warn("Maximum number of iterations exceeded.", ConvergenceWarning)
 
     all_alphas = np.concatenate(alphas)
-    all_alphas = all_alphas[all_alphas >= max(alphas_idx[-1] for alphas_idx in alphas)]  # Remove all alphas that lie below the largest alpha among all folds.
+    all_alphas = all_alphas[
+        all_alphas >= max(alphas_idx[-1] for alphas_idx in alphas)
+    ]  # Remove all alphas that lie below the largest alpha among all folds.
     all_alphas = np.unique(all_alphas)  # np.unique also sorts
-    all_residuals = [np.interp(all_alphas, a[::-1], r[::-1]) for a,r in zip(alphas, residuals)]
+    all_residuals = [np.interp(all_alphas, a[::-1], r[::-1]) for a, r in zip(alphas, residuals)]
 
     minIdx = np.argmin(np.exp(np.mean(np.log(all_residuals), axis=0)))
     # minIdx = np.argmin(np.mean(all_residuals, axis=0))
     best_alpha = all_alphas[minIdx]
 
-    ret = lasso_lars(X, y, best_alpha, max_iter=max_iter//cv, verbose=verbose, X_test=X_test)
+    ret = lasso_lars(X, y, best_alpha, max_iter=max_iter // cv, verbose=verbose, X_test=X_test)
     ret.n_iter_ = n_iter
     return ret
 
@@ -635,7 +701,7 @@ if __name__ == "__main__":
     # domain = [-1,1]
     # domain = [-2,2]
     # domain = [-3,3]
-    domain = [-5,5]
+    domain = [-5, 5]
     # domain = [-10, 10]
     # basisval = legval
     basisval = hermeval
