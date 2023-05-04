@@ -46,7 +46,9 @@ dataSize = args.trialSize * args.trainingSetSize + args.testSetSize
 
 logger.info("Importing optimiser")
 if args.algorithm == "sals":
-    from sparse_als import SparseALS
+    from sparse_als import SparseALS as ALS
+if args.algorithm == "ssals":
+    from semisparse_als import SemiSparseALS as ALS
 elif args.algorithm == "tensap":
     from tensap_optimiser import TensapOptimiser
 else:
@@ -185,6 +187,7 @@ def print_parameters(sparseALS):
     }
     tab = " " * 2
     maxParameterLen = max(len(p) for p in parameters)
+    logger.info(f"Algorithm: {sparseALS.__class__.__name__}")
     logger.info("-" * 125)
     for parameter, value in parameters.items():
         offset = " " * (maxParameterLen - len(parameter))
@@ -215,9 +218,8 @@ def print_state(iteration, sparseALS):
     logger.info(f"{tab}Ranks: {sparseALS.ranks}")
 
 
-if args.algorithm == "sals":
-    logger.info("Initialising sparse ALS optimiser")
-    sparseALS = SparseALS(measures, values, weights, weight_sequence)
+if args.algorithm in ["sals", "ssals"]:
+    sparseALS = ALS(measures, values, weights, weight_sequence)
     print_parameters(sparseALS)
     trial: int
     for trial in range(args.trialSize):

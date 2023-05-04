@@ -12,13 +12,18 @@ permutation = np.array([1, 5, 3, 0, 2, 4])
 xs = np.random.randn(13, len(permutation))
 assert np.all(xs[:, permutation] == xs @ permutation_matrix(permutation))
 
-Q, R, E, rank = sparseqr.qr(newCore, economy=True)
-E = permutation_matrix(E)
-Q = Q.tocsr()[:, :rank]
-R = R.tocsr()[:rank]
-assert np.allclose((Q @ R @ E.T - newCore).data, 0)
 
-print("Computing sparse QZ: C = QC")
-print("  nnz(C) ==", newCore.nnz)
+def qc(matrix: sps.spmatrix) -> tuple[sps.csr_matrix, sps.csr_matrix]:
+    Q, R, E, rank = sparseqr.qr(matrix, economy=True)
+    Q = Q.tocsr()[:, :rank]
+    R = R.tocsr()[:rank]
+    E = permutation_matrix(E)
+    C = R @ E.T
+    assert np.allclose((Q @ C - matrix).data, 0)
+    return Q, C
+
+
+print("Computing sparse QZ: C = QZ")
+print("  nnz(C) ==", matrix.nnz)
 print("  nnz(Q) ==", Q.nnz)
-print("  nnz(Z) ==", R.nnz)
+print("  nnz(Z) ==", C.nnz)
