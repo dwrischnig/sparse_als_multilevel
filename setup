@@ -72,7 +72,8 @@ fi
 __install_mamba () {
     (
         set -e
-        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if [[ "${OSTYPE}" == "linux"* ]]; then
            if [[ "$(uname -m)" == "x86_64" ]]; then
                local __mamba_url='https://conda.anaconda.org/conda-forge/linux-64/micromamba-0.24.0-0.tar.bz2'
                local __mamba_checksum='eb8edec14779b359b325aaf26ca1eb21'
@@ -93,6 +94,7 @@ __install_mamba () {
            fi
         else
            echo "This script requires a 'gnu-linux' or 'darwin' kernel.";
+           echo "System kernel: '${OSTYPE}'";
            return 1;
         fi
         local __temp_dir=$(mktemp -d)
@@ -107,7 +109,8 @@ __install_mamba () {
         if [[ "$OSTYPE" == "darwin"* ]]; then
             if [[ ! -f "/opt/homebrew/opt/libomp/lib/libomp.dylib" ]]; then
                 brew install libomp
-            fi [[ ! -f "${__mamba_root_prefix}/lib/libomp.dylib" ]]; then
+            fi
+            if [[ ! -f "${__mamba_root_prefix}/lib/libomp.dylib" ]]; then
                 ln -s /opt/homebrew/opt/libomp/lib/libomp.dylib ${__mamba_root_prefix}/lib/libomp.dylib
             fi
         fi
@@ -214,4 +217,4 @@ elif [ "$1" = 'purge' ]; then
 fi
 
 unset -f __install_mamba __install_crosshair __install_xerus
-source deactivate
+builtin source deactivate

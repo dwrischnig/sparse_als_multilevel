@@ -10,9 +10,9 @@ if [ $? -ne 0 ]; then
 fi
 
 for VARIANCE in 2 5 10; do
-    ${EXEC} python3 parametric_pde_sampling/compute_samples.py -b 500 darcy_lognormal_${VARIANCE} 11000
+    ${EXEC} python3 parametric_pde_sampling/compute_samples.py -b 100 darcy_lognormal_${VARIANCE} 20000
     ${EXEC} python3 parametric_pde_sampling/compute_functional.py -f identity darcy_lognormal_${VARIANCE}
 done
 
-${EXEC} python3 parametric_pde_sampling/compute_samples.py -b 400 darcy_rauhut 20000
+${EXEC} python3 parametric_pde_sampling/compute_samples.py -b 100 darcy_rauhut 20000
 ${EXEC} python3 parametric_pde_sampling/compute_functional.py -f integral darcy_rauhut
