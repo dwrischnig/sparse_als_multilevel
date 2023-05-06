@@ -67,7 +67,10 @@ pattern = "{problem}_{algorithm}_t{training_set_size}_s{test_set_size}_z{trial_s
 
 experiments = load_experiments(data_path, pattern)
 
-problem = "darcy"
+problem = "darcy_lognormal_2"
+problem = "darcy_lognormal_5"
+# problem = "darcy_lognormal_10"
+# problem = "darcy_rauhut"
 experiments = [e for e in experiments if e.problem == problem]
 
 rows = {
@@ -94,14 +97,16 @@ def create_table(
         for column_idx, column in enumerate(columns):
             entry_values = [value_key(e) for e in row_experiments if column_key(e) == column]
             if len(entry_values) > 0:
-                values[row_idx, column_idx] = (np.mean(entry_values), np.std(entry_values))
+                # values[row_idx, column_idx] = (np.mean(entry_values), np.std(entry_values))
+                values[row_idx, column_idx] = np.quantile(entry_values, [0.05, 0.95])
 
     def row_strings(values, bold_mask):
         def value_string(value):
             assert value.shape == (2,) and np.isnan(value[0]) == np.isnan(value[1])
             if np.isnan(value[0]):
                 return ""
-            return f"{value[0]:.2e} \u00B1 {value[1]:.0e}"
+            # return f"{value[0]:.2e} \u00B1 {value[1]:.0e}"
+            return f"[{value[0]:.2e}, {value[1]:.2e}]"
 
         def bold(string):
             return f"[bold]{string}[/bold]"
@@ -120,7 +125,8 @@ def create_table(
     return table
 
 
-title = f"{problem} ({{0}} \u00B1 standard deviation)"
+# title = f"{problem} ({{0}} \u00B1 standard deviation)"
+title = f"{problem} ({{0}} — 5% and 95% quantiles)"
 console.print()
 console.print(
     create_table(

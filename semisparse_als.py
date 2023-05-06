@@ -171,12 +171,6 @@ class SemiSparseALS(object):
         self.__initialised = True
         self.rank_inflation = 2
 
-    def weight_sequence_sharpness(self) -> list[float]:
-        result = []
-        for measure, weight_sequence in zip(self.measures, self.weight_sequences):
-            result.append(np.max(np.max(abs(measure), axis=0) / weight_sequence))
-        return result
-
     @property
     def measures(self) -> list[FloatArray]:
         return self.__measures
@@ -198,7 +192,7 @@ class SemiSparseALS(object):
             raise ValueError("arrays in 'measures' must have the same first dimensions")
         if not all(np.all(m[:, 0] == 1) for m in measures):
             raise ValueError("first basis function in 'measures' must be constant")
-        self.__measures = measures
+        self.__measures = measures.copy()
 
     @property
     def values(self) -> FloatArray:
@@ -238,7 +232,22 @@ class SemiSparseALS(object):
             and all(w.shape == (m.shape[1],) for w, m in zip(weight_sequences, self.measures))
         ):
             raise ValueError("'weight_sequences' is incompatible with 'SparseALS' object attributes 'measures'")
-        if not all(np.all(w >= np.max(abs(m), axis=0)) for w, m in zip(weight_sequences, self.measures)):
+        # Let measures[:, i] denote a single rank-one measure (shape: (order, dimension)).
+        # The entries of the tensor kron(measures[i]) must be bounded by those of kron(weight_sequences), i.e.
+        #      abs(kron(measures[:, i]) / kron(weight_sequences)) <= 1  (where <= holds element-wise)
+        # <--> kron(abs(measures[:, i])) / kron(weight_sequences) <= 1  (where <= holds element-wise)
+        # <--> kron(abs(measures[:, i]) / weight_sequences) <= 1        (where <= holds element-wise)
+        order, sample_size, dimension = self.measures.shape
+        weight_sequences = np.asarray(weight_sequences)
+        self.weight_sequence_sharpness = abs(self.measures) / weight_sequences[:, None, :]
+        assert self.weight_sequence_sharpness.shape == (order, sample_size, dimension)
+        # <--> max(kron(abs(measures[:, i]) / weight_sequences)) <= 1
+        # <--> prod(max(abs(measures[:, i]) / weight_sequences, axis=1)) <= 1.
+        self.weight_sequence_sharpness = np.product(np.max(self.weight_sequence_sharpness, axis=2), axis=0)
+        assert self.weight_sequence_sharpness.shape == (sample_size,)
+        # Since this has to hold for every i, ...
+        self.weight_sequence_sharpness = np.max(self.weight_sequence_sharpness)
+        if self.weight_sequence_sharpness > 1 + 1e-3:
             raise ValueError("'weight_sequences' must be larger than the sup norm of the basis functions")
         self.__weight_sequences = weight_sequences
 
@@ -483,12 +492,14 @@ class SemiSparseALS(object):
             if self.corePosition == self.order - 1:
                 raise ValueError("Can not move further in direction 'right'.")
             k = self.corePosition
+            logger.info(f"Move core: {k:d} → {k + 1:d}")
             oldCore = self.get_component(position=k, unfolding=2)
             leftRank, leftDimension, oldMiddleRank = self.cshape(k)
             assert oldCore.shape == (leftRank * leftDimension, oldMiddleRank)
             newCore = self.get_component(position=k + 1, unfolding=1)
             oldMiddleRank, rightDimension, rightRank = self.cshape(k + 1)
             assert newCore.shape == (oldMiddleRank, rightDimension * rightRank)
+            logger.debug(f"Old nnz: {newCore.nnz:d} + {oldCore.nnz:d}")
 
             # TODO: Is it still important, that the old cores are retrieved before the core position changes?
             self.corePosition = k + 1
@@ -509,6 +520,7 @@ class SemiSparseALS(object):
             newCore = C @ newCore
             self.set_component(position=k, component=oldCore, shape=(leftRank, leftDimension, newMiddleRank))
             self.set_component(position=k + 1, component=newCore, shape=(newMiddleRank, rightDimension, rightRank))
+            logger.debug(f"New nnz: {newCore.nnz:d} + {oldCore.nnz:d}")
 
             # Compute out[i] = outer(stack[k - 1][i], measures[k][i]) @ oldCore == outer(stack[k - 1][i], measures[k][i]) @ Q @ P
             self.__stack[k] = kron_dot_qpm(self.__stack[k - 1], self.measures[k], Q) @ P

@@ -10,7 +10,9 @@ import time
 
 from loguru import logger
 import numpy as np
+from numpy.polynomial.hermite_e import hermeval
 from numpy.polynomial.legendre import legval
+from scipy.special import factorial
 from colored import fg, attr
 
 from sparse_als import FloatArray
@@ -36,7 +38,8 @@ args.trainingSetSize = args.TRAINING_SET_SIZE
 args.testSetSize = args.TEST_SET_SIZE
 args.trialSize = args.trial_size
 args.basisDimension = args.basis_dimension
-args.maxIterations = 100
+# args.maxIterations = 100
+args.maxIterations = 50
 assert args.trainingSetSize > 0
 assert args.testSetSize > 0
 assert args.trialSize > 0
@@ -47,7 +50,7 @@ dataSize = args.trialSize * args.trainingSetSize + args.testSetSize
 logger.info("Importing optimiser")
 if args.algorithm == "sals":
     from sparse_als import SparseALS as ALS
-if args.algorithm == "ssals":
+elif args.algorithm == "ssals":
     from semisparse_als import SemiSparseALS as ALS
 elif args.algorithm == "tensap":
     from tensap_optimiser import TensapOptimiser
@@ -70,23 +73,27 @@ if args.problem == "runge":
     problem = ProblemClass({})
     points, values = problem.compute_sample(salt=0, size=dataSize, offset=0)
     values = values[:, 0]
-    weights = np.ones(points.shape[0])
+    weight_function = lambda x: np.ones_like(x, dtype=float)
     args.basis = "Legendre"
-elif args.problem == "darcy":
+    domain = (-1, 1)
+elif args.problem.startswith("darcy_lognormal_"):
+    from scipy.stats import norm
+
     logger.info("Loading data")
-    z = np.load("problem/darcy_lognormal_10.npz")
-    points = z["points"]
+    variance = int(args.problem[len("darcy_lognormal_") :])
+    z = np.load(f"problem/darcy_lognormal_{variance}/functional_identity.npz")
+    points = z["samples"]
     values = z["values"]
 
     def orthogonalise(values):
         assert values.ndim == 2
         gramian = values.T @ values / values.shape[0]
         es, vs = np.linalg.eigh(gramian)
-        assert np.allclose(vs * es @ vs.T, gramian)
+        # assert np.allclose(vs * es @ vs.T, gramian)
         assert np.all(es[:-1] <= es[1:])
         result = values @ vs
-        transformed_gramian = result.T @ result / result.shape[0]
-        assert np.allclose(transformed_gramian - np.diag(es), 0)
+        # transformed_gramian = result.T @ result / result.shape[0]
+        # assert np.allclose(transformed_gramian - np.diag(es), 0)
         return result
 
     logger.info("Orthogonalising data")
@@ -100,66 +107,85 @@ elif args.problem == "darcy":
     coefficient = -1
     values = values[:, coefficient]
 
-    logger.info("Rejecting sample points")
-    bound = 3
-    mask = np.all(points >= -bound, axis=1) & np.all(points <= bound, axis=1)
-    points = points[mask][:dataSize] / bound
+    # logger.info("Rejecting sample points")
+    # bound = 3
+    # mask = np.all(points >= -bound, axis=1) & np.all(points <= bound, axis=1)
+    # points = points[mask][:dataSize] / bound
+    # assert -1 <= np.min(points) and np.max(points) <= 1
+    # values = values[mask][:dataSize]
+    # args.basis = "Legendre"
+    # # We have to optimise the L2(ρ) norm for the measure ρ for which the basis is orthonormal.
+    # # Since the sample points are drawn with respect to the truncated Gaussian measure, we have to weight them
+    # # accordingly.
+    # mass = norm.cdf(bound) - norm.cdf(-bound)
+    # sample_density_1d = lambda x: norm.pdf(x) / mass
+    # basis_density_1d = lambda x: np.ones_like(x, dtype=float)
+    # weight_function = lambda x: np.product(basis_density_1d(x) / sample_density_1d(x), axis=1)
+
+    points = points[:dataSize]
+    values = values[:dataSize]
+    args.basis = "Hermite"
+    # We have to optimise the L2(ρ) norm for the measure ρ for which the basis is orthonormal.
+    # Since the sample points are drawn with respect to the truncated Gaussian measure, we have to weight them
+    # accordingly.
+    sample_density_1d = lambda x: norm.pdf(x, scale=np.sqrt(variance))
+    basis_density_1d = lambda x: norm.pdf(x, scale=1)
+    weight_function = lambda x: np.product(basis_density_1d(x) / sample_density_1d(x), axis=1)
+    domain = (-args.basis_dimension, args.basis_dimension)
+
+elif args.problem == "darcy_rauhut":
+    logger.info("Loading data")
+    z = np.load("problem/darcy_rauhut/functional_integral.npz")
+    points = z["samples"]
+    values = z["values"]
+    assert points.ndim == 2 and points.shape[0] >= dataSize and values.shape == (points.shape[0],)
     assert -1 <= np.min(points) and np.max(points) <= 1
-    values = values[mask][:dataSize]
-    weights = np.product(np.exp(-(points**2) / 2) / np.sqrt(2 * np.pi), axis=1)
+    points = points[:dataSize]
+    values = values[:dataSize]
+    weight_function = lambda x: np.ones_like(x, dtype=float)
     args.basis = "Legendre"
+    domain = (-1, 1)
 else:
     raise NotImplementedError(f"Unknown problem: {args.problem}")
 
 assert points.ndim == 2 and points.shape[0] == dataSize
 assert values.shape == (dataSize,)
+weights = weight_function(points)
 assert weights.shape == (dataSize,)
 
 if args.basis == "Legendre":
     # The normalized Legendre polynomials.
     factors = np.sqrt(2 * np.arange(args.basisDimension) + 1)
-    # G = Gramian(args.basisDimension, HkinnerLegendre(args.regularity))
-    # G = np.diag(factors) @ G @ np.diag(factors) / 2
-    # weight_sequence, basis = np.linalg.eigh(G)
-    # assert np.all(weight_sequence > 0)
-    # assert np.allclose(basis * weight_sequence @ basis.T, G)
-    # if args.regularity == 0:
-    #     assert np.allclose(weight_sequence, 1)
-    # assert np.all(weight_sequence > 0)
-    # assert np.allclose(basis * weight_sequence @ basis.T, G)
-    # For args.regularity == 0, can not guarantee that the first basis funciton will be constant.
-    # Moreover, we can not guarantee that the weight_sequence constitute an upper bound for the infty norm.
-    # We therefore use the sequence of (the powers of) the L^\infty-norms.
-    weight_sequence = [factors ** (args.regularity + 1)] * points.shape[1]
 
     def evaluate_basis(points: FloatArray) -> FloatArray:
         assert points.ndim == 2 and points.size > 0
-        assert np.max(abs(points)) < 1
-        measures = legval(points, np.diag(factors))
-        # return np.einsum("de,enm -> mnd", basis.T, measures)
-        return measures.T
+        assert np.max(abs(points)) <= 1
+        return legval(points, np.diag(factors)).T  # shape: (order, sample_size, dimension)
 
-    # NOTE: The Hermite basis is not implemented, since the weight sequence depends on the choice of weight function.
-    #       One possible choice would be to draw the sample according to N(0, 2) and use the PDF of the standard
-    #       Gaussian distribution as a weight function. Although the basis functions are not uniformly bounded with
-    #       respect to the weighted L^\infty-norm, their maximal points (and theirby their maximal values) can be easily
-    #       computed. ((H_n ρ)' = (H_n' - x)ρ = 0 <-> H_n' - x = 0)
-    #       This gives a weight sequence satisfying ω_n ≥ ||w B_n||_L∞.
-    #       But the sought function has to be sparse with respect to this weight sequence!
-    #       Since ω_n ∈ O(exp(n)), a sufficient condition is for the sought function to be analytic and bounded on a
-    #       ball of sufficiently large radius.
-    # elif args.basis == "Hermite":
-    #     # As a basis use the normalized probabilist's Hermite polynomials.
-    #     factorials = factorial(np.arange(args.basisDimension), exact=True)
-    #     assert isinstance(factorials, np.ndarray) and factorials.dtype == np.int_
-    #     factors = np.sqrt((1 / factorials).astype(float))
+elif args.basis == "Hermite":
+    # The normalized probabilist's Hermite polynomials.
+    factorials = factorial(np.arange(args.basisDimension), exact=True)
+    assert isinstance(factorials, np.ndarray) and factorials.dtype == np.int_
+    factors = np.sqrt((1 / factorials).astype(float))
 
-    #     def evaluate_basis(points: FloatArray) -> FloatArray:
-    #         assert points.ndim == 2 and points.size > 0
-    #         return hermeval(points, np.diag(factors)).T
+    def evaluate_basis(points: FloatArray) -> FloatArray:
+        assert points.ndim == 2 and points.size > 0
+        return hermeval(points, np.diag(factors)).T  # shape: (order, sample_size, dimension)
 
 else:
     raise NotImplementedError(f"Unknown basis: {args.basis}")
+
+
+reference_points = np.linspace(*domain, num=10_000)
+reference_measures = np.sqrt(weight_function(reference_points[:, None]))[None, :, None] * evaluate_basis(
+    reference_points[:, None]
+)
+assert reference_measures.shape == (1, 10_000, args.basisDimension)
+reference_variation = abs(reference_measures[0])
+if args.basis == "Hermite":
+    assert np.all(0 < np.argmax(reference_variation, axis=0)) and np.all(np.argmax(reference_variation, axis=0) < 9_999)
+weight_sequence = [reference_variation.max(axis=0) ** (args.regularity + 1)] * points.shape[1]
+
 
 measures = evaluate_basis(points)
 assert measures.shape == (points.shape[1], dataSize, args.basisDimension)
@@ -176,8 +202,8 @@ def colorise_success(value, condition):
 
 def print_parameters(sparseALS):
     """Print the parameters of the ALS scheme."""
-    ω_sharpness = sparseALS.weight_sequence_sharpness()
-    ω_sharpness = "[" + ", ".join(colorise_success(c, c <= 1) for c in ω_sharpness) + "]"
+    ω_sharpness = sparseALS.weight_sequence_sharpness
+    ω_sharpness = colorise_success(ω_sharpness, ω_sharpness >= 0.5)
 
     parameters = {
         "dimensions": f"{sparseALS.dimensions}",
@@ -211,7 +237,7 @@ def print_state(iteration, sparseALS):
         regularisationParameters = np.rint(np.log10(sparseALS.regularisationParameters))
     regularisationParameters = "10^[" + ", ".join(display_float(param) for param in regularisationParameters) + "]"
     componentDensities = "[" + ", ".join(f"{int(100*d+0.5):2d}" for d in sparseALS.componentDensities) + "]%"
-    logger.info(f"[{itrStr}]  Residuals: trn={trnStr}, val={valStr}")
+    logger.info(f"[{itrStr}]  Residuals: trn={trnStr}, tst={valStr}")
     tab = " " * (len(itrStr) + 4)
     logger.info(f"{tab}Regularisation parameters: {regularisationParameters}")
     logger.info(f"{tab}Component densities: {componentDensities}")
@@ -219,10 +245,10 @@ def print_state(iteration, sparseALS):
 
 
 if args.algorithm in ["sals", "ssals"]:
-    sparseALS = ALS(measures, values, weights, weight_sequence)
-    print_parameters(sparseALS)
     trial: int
     for trial in range(args.trialSize):
+        sparseALS = ALS(measures, values, weights, weight_sequence)
+        print_parameters(sparseALS)
         logger.info("=" * 125)
         logger.info(f"Trial: {trial+1:>{len(str(args.trialSize))}d} / {args.trialSize}")
         start = args.testSetSize + trial * args.trainingSetSize
@@ -257,11 +283,10 @@ if args.algorithm in ["sals", "ssals"]:
     logger.info("=" * 125)
 
 elif args.algorithm == "tensap":
-    logger.info("Initialising tensap optimiser")
-    tensapOptimiser = TensapOptimiser(points, values, args.basis, args.basis_dimension)
-
     trial: int
     for trial in range(args.trialSize):
+        logger.info("Algorithm: tensap")
+        tensapOptimiser = TensapOptimiser(points, values, weights, args.basis, args.basis_dimension)
         logger.info("=" * 125)
         logger.info(f"Trial: {trial+1:>{len(str(args.trialSize))}d} / {args.trialSize}")
         start = args.testSetSize + trial * args.trainingSetSize
@@ -278,7 +303,6 @@ elif args.algorithm == "tensap":
             trainingErrors.append(tensapOptimiser.residual(trainingSet))
             testErrors.append(tensapOptimiser.residual(testSet))
             dofs.append(tensapOptimiser.parameters)
-            tensapOptimiser.reset()
             logger.info(f"Final training set error: {trainingErrors[-1]:.2e}")
             logger.info(f"Final test set error:     {testErrors[-1]:.2e}")
             logger.info(f"Final dofs:               {dofs[-1]:>8d}")

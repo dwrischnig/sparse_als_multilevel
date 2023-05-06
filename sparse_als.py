@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 import scipy.sparse as sps
 import deal
+from loguru import logger
 
 from sparse_qc import fold_all, is_qpm, is_sparse_matrix, sparse_qc, kron_dot_qpm, diag_kron_conjugate_qpm
 from lasso_lars import SimpleOperator, lasso_lars_cv, ConvergenceWarning
@@ -41,7 +42,7 @@ class SparseALS(object):
         if components is None:
             assert corePosition is None
             components = [np.eye(dimension, 1)[None] for dimension in self.dimensions]
-            components[-1] *= np.mean(self.values)
+            components[-1] *= np.mean(weights * values)
             corePosition = cast(NonNegativeInt, self.order - 1)
         else:
             assert corePosition is not None
@@ -56,12 +57,6 @@ class SparseALS(object):
         self.componentDensities = [1.0] * self.order
         self.sweepDirection = "right"
         self.__initialised = True
-
-    def weight_sequence_sharpness(self) -> list[float]:
-        result = []
-        for measure, weight_sequence in zip(self.measures, self.weight_sequences):
-            result.append(np.max(np.max(abs(measure), axis=0) / weight_sequence))
-        return result
 
     @property
     def measures(self) -> list[FloatArray]:
@@ -84,7 +79,7 @@ class SparseALS(object):
             raise ValueError("arrays in 'measures' must have the same first dimensions")
         if not all(np.all(m[:, 0] == 1) for m in measures):
             raise ValueError("first basis function in 'measures' must be constant")
-        self.__measures = measures
+        self.__measures = measures.copy()
 
     @property
     def values(self) -> FloatArray:
@@ -124,7 +119,22 @@ class SparseALS(object):
             and all(w.shape == (m.shape[1],) for w, m in zip(weight_sequences, self.measures))
         ):
             raise ValueError("'weight_sequences' is incompatible with 'SparseALS' object attributes 'measures'")
-        if not all(np.all(w >= np.max(abs(m), axis=0)) for w, m in zip(weight_sequences, self.measures)):
+        # Let measures[:, i] denote a single rank-one measure (shape: (order, dimension)).
+        # The entries of the tensor kron(measures[i]) must be bounded by those of kron(weight_sequences), i.e.
+        #      abs(kron(measures[:, i]) / kron(weight_sequences)) <= 1  (where <= holds element-wise)
+        # <--> kron(abs(measures[:, i])) / kron(weight_sequences) <= 1  (where <= holds element-wise)
+        # <--> kron(abs(measures[:, i]) / weight_sequences) <= 1        (where <= holds element-wise)
+        order, sample_size, dimension = self.measures.shape
+        weight_sequences = np.asarray(weight_sequences)
+        self.weight_sequence_sharpness = abs(self.measures) / weight_sequences[:, None, :]
+        assert self.weight_sequence_sharpness.shape == (order, sample_size, dimension)
+        # <--> max(kron(abs(measures[:, i]) / weight_sequences)) <= 1
+        # <--> prod(max(abs(measures[:, i]) / weight_sequences, axis=1)) <= 1.
+        self.weight_sequence_sharpness = np.product(np.max(self.weight_sequence_sharpness, axis=2), axis=0)
+        assert self.weight_sequence_sharpness.shape == (sample_size,)
+        # Since this has to hold for every i, ...
+        self.weight_sequence_sharpness = np.max(self.weight_sequence_sharpness)
+        if self.weight_sequence_sharpness > 1 + 1e-3:
             raise ValueError("'weight_sequences' must be larger than the sup norm of the basis functions")
         self.__weight_sequences = weight_sequences
 
@@ -324,6 +334,7 @@ class SparseALS(object):
             if self.corePosition == 0:
                 raise ValueError("Can not move further in direction 'left'.")
             k = self.corePosition
+            logger.info(f"Move core: {k:d} → {k - 1:d}")
             newCore = self.get_component(position=k - 1, unfolding=2)
             leftRank, leftDimension, oldMiddleRank = self.cshape(k - 1)
             assert newCore.shape == (leftRank * leftDimension, oldMiddleRank)
@@ -353,6 +364,7 @@ class SparseALS(object):
             if self.corePosition == self.order - 1:
                 raise ValueError("Can not move further in direction 'right'.")
             k = self.corePosition
+            logger.info(f"Move core: {k:d} → {k + 1:d}")
             oldCore = self.get_component(position=k, unfolding=2)
             leftRank, leftDimension, oldMiddleRank = self.cshape(k)
             assert oldCore.shape == (leftRank * leftDimension, oldMiddleRank)
@@ -390,7 +402,7 @@ class SparseALS(object):
         eOp = self.measures[k][set]
         rOp = self.__stack[k + 1][set]  # type: ignore
         operator = (lOp[:, :, None, None] * eOp[:, None, :, None] * rOp[:, None, None, :]).reshape(lOp.shape[0], -1)
-        # nl, ne, nr -> nler
+        # nl, ne, nr -> n(ler)
         operator /= weights[None]
         assert np.all(np.isfinite(operator))
         operator = SimpleOperator(operator)
@@ -403,10 +415,13 @@ class SparseALS(object):
         model = lasso_lars_cv(operator, self.values[set], cv=cv, max_features=max_features)
         assert model.alpha_ >= 0
         assert len(model.active_) > 0
+        assert np.linalg.norm(model.coef_) > 0
         coreData = model.coef_ / weights[model.active_]
+        assert np.linalg.norm(coreData) > 0
         coreRow = np.zeros(len(model.active_), dtype=np.int32)
         coreCol = model.active_
         core = sps.coo_matrix((coreData, (coreRow, coreCol)), shape=(1, len(weights)))
+        core.eliminate_zeros()
         self.set_component(position=k, component=core, shape=(lOp.shape[1], eOp.shape[1], rOp.shape[1]))
         self.regularisationParameters[k] = model.alpha_
         self.componentDensities[k] = len(model.active_) / len(weights)

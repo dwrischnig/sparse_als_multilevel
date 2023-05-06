@@ -1,14 +1,16 @@
 import numpy as np
 import tensap as ts
+from loguru import logger
 
 from sparse_als import FloatArray
 
 
 class TensapOptimiser(object):
-    def __init__(self, points: FloatArray, values: FloatArray, basis: str, basis_dimension: int):
-        assert points.ndim == 2 and values.shape == (points.shape[0],)
+    def __init__(self, points: FloatArray, values: FloatArray, weights: FloatArray, basis: str, basis_dimension: int):
+        assert points.ndim == 2 and values.shape == (points.shape[0],) and weights.shape == (points.shape[0],)
         self.points = points
         self.values = values
+        self.weights = weights
         if basis == "Legendre":
             univariateBasis = ts.PolynomialFunctionalBasis(ts.LegendrePolynomials(), range(basis_dimension))
         elif basis == "Hermite":
@@ -16,9 +18,6 @@ class TensapOptimiser(object):
         else:
             raise NotImplementedError(f"Unknown basis: {basis}")
         self.basis = ts.FunctionalBases([univariateBasis] * self.modes)
-        self.result = None
-
-    def reset(self):
         self.result = None
 
     @property
@@ -37,14 +36,20 @@ class TensapOptimiser(object):
         assert self.result.bases is self.basis
         prediction = self.result.eval(self.points[set])
         assert prediction.shape == (self.points[set].shape[0],)
-        return np.linalg.norm(prediction - self.values[set]) / np.linalg.norm(self.values[set])
+        return np.linalg.norm(np.sqrt(self.weights[set]) * (prediction - self.values[set])) / np.linalg.norm(
+            np.sqrt(self.weights[set]) * self.values[set]
+        )
 
     def optimise(self, set):
         solver = ts.TreeBasedTensorLearning.tensor_train(self.modes, ts.SquareLossFunction())
 
         solver.bases = self.basis
         solver.bases_eval = self.basis.eval(self.points[set])
-        solver.training_data = [None, self.values[set]]
+        assert len(solver.bases_eval) == self.modes
+        for mode in range(self.modes):
+            assert solver.bases_eval[mode].shape[0] == self.points[set].shape[0]
+            solver.bases_eval[mode] *= (self.weights[set] ** (0.5 / self.modes))[:, None]
+        solver.training_data = [None, np.sqrt(self.weights[set]) * self.values[set]]
 
         solver.tolerance["on_stagnation"] = 1e-6
         solver.tolerance["on_error"] = 1e-6

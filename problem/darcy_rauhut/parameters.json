@@ -1,0 +1,18 @@
+{
+    "problem": {
+        "name": "darcy_rauhut"
+    },
+    "fe": {
+        "degree": 1,
+        "mesh": 50
+    },
+    "expansion": {
+        "size": 20,
+        "decay rate": 2.0,
+        "forcing": 10.0
+    },
+    "sampling": {
+        "distribution": "uniform",
+        "strategy": "random"
+    }
+}
