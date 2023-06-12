@@ -627,12 +627,14 @@ def lasso_lars_cv(
     all_alphas = np.unique(all_alphas)  # np.unique also sorts
     all_residuals = [np.interp(all_alphas, a[::-1], r[::-1]) for a, r in zip(alphas, residuals)]
 
-    minIdx = np.argmin(np.exp(np.mean(np.log(all_residuals), axis=0)))
+    all_residuals_gm = np.exp(np.mean(np.log(all_residuals), axis=0))
+    minIdx = np.argmin(all_residuals_gm)
     # minIdx = np.argmin(np.mean(all_residuals, axis=0))
     best_alpha = all_alphas[minIdx]
 
     ret = lasso_lars(X, y, best_alpha, max_iter=max_iter // cv, verbose=verbose, X_test=X_test)
     ret.n_iter_ = n_iter
+    ret.cv_error_ = all_residuals_gm[minIdx]
     return ret
 
 

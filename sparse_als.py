@@ -391,7 +391,7 @@ class SparseALS(object):
             self.__weightStack[k + 1] = None
 
     @deal.pre(lambda self, set: self.is_canonicalised())
-    def microstep(self, set: slice = slice(None)):
+    def microstep(self, set: slice = slice(None)) -> float:
         if not isinstance(set, slice):
             assert np.ndim(set) == 1
         k = self.corePosition
@@ -415,19 +415,22 @@ class SparseALS(object):
         model = lasso_lars_cv(operator, self.values[set], cv=cv, max_features=max_features)
         assert model.alpha_ >= 0
         assert len(model.active_) > 0
-        assert np.linalg.norm(model.coef_) > 0
+        # assert np.linalg.norm(model.coef_) > 0
         coreData = model.coef_ / weights[model.active_]
-        assert np.linalg.norm(coreData) > 0
+        # assert np.linalg.norm(coreData) > 0
+        if np.linalg.norm(coreData) == 0:
+            coreData[coreData == 0] = 1e-12 * np.sqrt(np.mean(self.values[set] ** 2))
         coreRow = np.zeros(len(model.active_), dtype=np.int32)
-        coreCol = model.active_
-        core = sps.coo_matrix((coreData, (coreRow, coreCol)), shape=(1, len(weights)))
+        coreCol = active_coefficients[model.active_]
+        core = sps.coo_matrix((coreData, (coreRow, coreCol)), shape=(1, coreSize))
         core.eliminate_zeros()
         self.set_component(position=k, component=core, shape=(lOp.shape[1], eOp.shape[1], rOp.shape[1]))
         self.regularisationParameters[k] = model.alpha_
-        self.componentDensities[k] = len(model.active_) / len(weights)
+        self.componentDensities[k] = len(model.active_) / coreSize
+        return model.cv_error_
 
-    def step(self, set: slice = slice(None)):
-        self.microstep(set)
+    def step(self, set: slice = slice(None)) -> float:
+        validationError = self.microstep(set)
         if self.order == 1:
             return
         limit = {"left": 0, "right": self.order - 1}[self.sweepDirection]
@@ -435,6 +438,7 @@ class SparseALS(object):
             turn = {"left": "right", "right": "left"}[self.sweepDirection]
             self.sweepDirection = turn
         self.move_core(self.sweepDirection)
+        return validationError
 
     def residual(self, set: slice = slice(None)) -> np.floating:
         if not isinstance(set, slice):

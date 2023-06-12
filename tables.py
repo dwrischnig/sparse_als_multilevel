@@ -3,18 +3,14 @@
 import re
 from pathlib import Path
 from dataclasses import dataclass, fields
-from typing import Any, Callable
-from operator import attrgetter
+from typing import Any, Callable, Optional
 
 import numpy as np
 from numpy.typing import NDArray
-from rich.console import Console
 from rich.table import Table
 
 import autoPDB  # noqa: F401
 
-
-console = Console()
 
 IntArray = NDArray[np.integer]
 FloatArray = NDArray[np.floating]
@@ -32,6 +28,10 @@ class Experiment:
     test_set_errors: FloatArray
     training_set_errors: FloatArray
     times: FloatArray
+    validation_set_errors: Optional[FloatArray] = None
+
+
+ExperimentKey = Callable[[Experiment], Any]
 
 
 def string_to_dict(string, pattern):
@@ -53,8 +53,11 @@ def load_experiments(data_path: str | Path, pattern: str) -> list[Experiment]:
         except (AttributeError, ValueError):
             continue
         z = np.load(path)
-        assert set(z.keys()) == {"testErrors", "trainingErrors", "times", "dofs"}
+        assert set(z.keys()) >= {"testErrors", "trainingErrors", "times", "dofs"}
         parameters["test_set_errors"] = z["testErrors"]
+        if parameters["algorithm"] in ["sals", "ssals"]:
+            assert "validationErrors" in z
+            parameters["validation_set_errors"] = z["validationErrors"]
         parameters["training_set_errors"] = z["trainingErrors"]
         parameters["dofs"] = z["dofs"]
         parameters["times"] = z["times"]
@@ -62,32 +65,11 @@ def load_experiments(data_path: str | Path, pattern: str) -> list[Experiment]:
     return experiments
 
 
-data_path = Path(__file__).parent.absolute() / ".cache"
-pattern = "{problem}_{algorithm}_t{training_set_size}_s{test_set_size}_z{trial_size}-{trial}.npz"
-
-experiments = load_experiments(data_path, pattern)
-
-problem = "darcy_lognormal_2"
-problem = "darcy_lognormal_5"
-# problem = "darcy_lognormal_10"
-# problem = "darcy_rauhut"
-experiments = [e for e in experiments if e.problem == problem]
-
-rows = {
-    "SALS": [e for e in experiments if e.algorithm == "sals"],
-    "Tensap": [e for e in experiments if e.algorithm == "tensap"],
-}
-
-
-ExperimentKey = Callable[[Experiment], Any]
-
-
-def create_table(
+def extract_data(
     experiments: list[Experiment],
     row_key: ExperimentKey,
     column_key: ExperimentKey,
     value_key: ExperimentKey,
-    title: str,
 ):
     rows = sorted({row_key(e) for e in experiments})
     columns = sorted({column_key(e) for e in experiments})
@@ -99,6 +81,17 @@ def create_table(
             if len(entry_values) > 0:
                 # values[row_idx, column_idx] = (np.mean(entry_values), np.std(entry_values))
                 values[row_idx, column_idx] = np.quantile(entry_values, [0.05, 0.95])
+    return rows, columns, values
+
+
+def create_table(
+    experiments: list[Experiment],
+    row_key: ExperimentKey,
+    column_key: ExperimentKey,
+    value_key: ExperimentKey,
+    title: str,
+):
+    rows, columns, values = extract_data(experiments, row_key, column_key, value_key)
 
     def row_strings(values, bold_mask):
         def value_string(value):
@@ -125,36 +118,63 @@ def create_table(
     return table
 
 
-# title = f"{problem} ({{0}} \u00B1 standard deviation)"
-title = f"{problem} ({{0}} — 5% and 95% quantiles)"
-console.print()
-console.print(
-    create_table(
-        experiments,
-        attrgetter("algorithm"),
-        attrgetter("training_set_size"),
-        lambda e: getattr(e, "test_set_errors")[-1],
-        title=title.format("Errors"),
+def get_optimal_index(experiment: Experiment, criterion: str) -> int:
+    if getattr(experiment, criterion) is not None:
+        assert len(experiment.validation_set_errors) == len(experiment.test_set_errors)
+        return np.argmin(getattr(experiment, criterion))
+    else:
+        assert experiment.algorithm != "sals"
+        return -1
+
+
+if __name__ == "__main__":
+    from operator import attrgetter
+
+    from rich.console import Console
+
+    data_path = Path(__file__).parent.absolute() / ".cache"
+    pattern = "{problem}_{algorithm}_t{training_set_size}_s{test_set_size}_z{trial_size}-{trial}.npz"
+
+    experiments = load_experiments(data_path, pattern)
+
+    # problem = "darcy_lognormal_2"
+    # problem = "darcy_lognormal_5"
+    # problem = "darcy_lognormal_10"
+    problem = "darcy_rauhut"
+    experiments = [e for e in experiments if e.problem == problem]
+
+    console = Console()
+
+    # title = f"{problem} ({{0}} \u00B1 standard deviation)"
+    title = f"{problem} ({{0}} — 5% and 95% quantiles)"
+    console.print()
+    console.print(
+        create_table(
+            experiments,
+            attrgetter("algorithm"),
+            attrgetter("training_set_size"),
+            lambda e: e.test_set_errors[get_optimal_index(e, "validation_set_errors")],
+            title=title.format("Errors"),
+        )
     )
-)
-console.print()
-console.print(
-    create_table(
-        experiments,
-        attrgetter("algorithm"),
-        attrgetter("training_set_size"),
-        lambda e: np.diff(getattr(e, "times")[-2:])[0],
-        title=title.format("Running times"),
+    console.print()
+    console.print(
+        create_table(
+            experiments,
+            attrgetter("algorithm"),
+            attrgetter("training_set_size"),
+            lambda experiment: experiment.times[-1] - experiment.times[0],
+            title=title.format("Running times"),
+        )
     )
-)
-console.print()
-console.print(
-    create_table(
-        experiments,
-        attrgetter("algorithm"),
-        attrgetter("training_set_size"),
-        lambda e: getattr(e, "dofs")[-1],
-        title=title.format("Parameters"),
+    console.print()
+    console.print(
+        create_table(
+            experiments,
+            attrgetter("algorithm"),
+            attrgetter("training_set_size"),
+            lambda e: e.dofs[get_optimal_index(e, "validation_set_errors")],
+            title=title.format("Parameters"),
+        )
     )
-)
-console.print()
+    console.print()

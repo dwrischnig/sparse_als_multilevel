@@ -142,7 +142,7 @@ elif args.problem == "darcy_rauhut":
     assert -1 <= np.min(points) and np.max(points) <= 1
     points = points[:dataSize]
     values = values[:dataSize]
-    weight_function = lambda x: np.ones_like(x, dtype=float)
+    weight_function = lambda x: np.ones(x.shape[0], dtype=float)
     args.basis = "Legendre"
     domain = (-1, 1)
 else:
@@ -247,6 +247,13 @@ def print_state(iteration, sparseALS):
 if args.algorithm in ["sals", "ssals"]:
     trial: int
     for trial in range(args.trialSize):
+        fileName = f".cache/{args.problem}_{args.algorithm}_t{args.trainingSetSize}_s{args.testSetSize}_z{args.trialSize}-{trial}.npz"
+        if os.path.exists(fileName):
+            z = np.load(fileName)
+            if "validationErrors" in z.keys() and len(z["validationErrors"]) == len(z["testErrors"]):
+                continue
+        logger.info(f"Computing '{fileName}'")
+
         sparseALS = ALS(measures, values, weights, weight_sequence)
         print_parameters(sparseALS)
         logger.info("=" * 125)
@@ -256,27 +263,30 @@ if args.algorithm in ["sals", "ssals"]:
 
         dofs = [sparseALS.parameters]
         trainingErrors = [sparseALS.residual(trainingSet)]
+        validationErrors = [np.inf]
         testErrors = [sparseALS.residual(testSet)]
         times = [time.process_time()]
         print_state(0, sparseALS)
         logger.info("Optimising")
         for iteration in range(1, args.maxIterations + 1):
             try:
-                sparseALS.step(trainingSet)
+                validationError = sparseALS.step(trainingSet)
                 print_state(iteration, sparseALS)
             except StopIteration:
                 break
             times.append(time.process_time())
             trainingErrors.append(sparseALS.residual(trainingSet))
+            validationErrors.append(validationError)
             testErrors.append(sparseALS.residual(testSet))
             dofs.append(sparseALS.parameters)
             if iteration - np.argmin(trainingErrors) - 1 > 3:
                 break
 
         np.savez_compressed(
-            f".cache/{args.problem}_{args.algorithm}_t{args.trainingSetSize}_s{args.testSetSize}_z{args.trialSize}-{trial}.npz",
+            fileName,
             times=times,
             trainingErrors=trainingErrors,
+            validationErrors=validationErrors,
             testErrors=testErrors,
             dofs=dofs,
         )
@@ -285,7 +295,15 @@ if args.algorithm in ["sals", "ssals"]:
 elif args.algorithm == "tensap":
     trial: int
     for trial in range(args.trialSize):
+        fileName = f".cache/{args.problem}_{args.algorithm}_t{args.trainingSetSize}_s{args.testSetSize}_z{args.trialSize}-{trial}.npz"
+        if os.path.exists(fileName):
+            continue
+        logger.info(f"Computing '{fileName}'")
+
         logger.info("Algorithm: tensap")
+        logger.info("-" * 125)
+        logger.info(f"  sample size = {dataSize}")
+        logger.info("-" * 125)
         tensapOptimiser = TensapOptimiser(points, values, weights, args.basis, args.basis_dimension)
         logger.info("=" * 125)
         logger.info(f"Trial: {trial+1:>{len(str(args.trialSize))}d} / {args.trialSize}")
@@ -307,7 +325,7 @@ elif args.algorithm == "tensap":
             logger.info(f"Final test set error:     {testErrors[-1]:.2e}")
             logger.info(f"Final dofs:               {dofs[-1]:>8d}")
             np.savez_compressed(
-                f".cache/{args.problem}_{args.algorithm}_t{args.trainingSetSize}_s{args.testSetSize}_z{args.trialSize}-{trial}.npz",
+                fileName,
                 times=times,
                 trainingErrors=trainingErrors,
                 testErrors=testErrors,
