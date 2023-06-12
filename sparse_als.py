@@ -405,6 +405,22 @@ class SparseALS(object):
         # nl, ne, nr -> n(ler)
         operator /= weights[None]
         assert np.all(np.isfinite(operator))
+
+        # Restrict the optimisation to those indices for which the (squared) weights are smaller than the current weighted sparsity.
+        assert self.get_component(k, 0).ndim == 2 and self.get_component(k, 0).shape[0] == 1
+        assert np.all(self.get_component(k, 0).tocoo().row == 0)
+        # max_sparsity = np.sum(weights[self.get_component(k, 0).tocoo().col] ** 2) ** 2
+        max_sparsity = np.inf
+        logger.debug(f"Maximum sparsity: {max_sparsity:.2e}")
+        active_coefficients = np.nonzero(weights**2 <= max_sparsity)[0]
+        # print(weights.shape)
+        # print(weights)
+        logger.debug(f"Active coefficients: {len(active_coefficients)}")
+        coreSize = len(weights)
+        assert self.get_component(k, 0).shape == (1, coreSize)
+        weights = weights[active_coefficients]
+        operator = operator[:, active_coefficients]
+
         operator = SimpleOperator(operator)
         # TODO: We could also use a tensor product operator.
         #       This would be more efficient.
