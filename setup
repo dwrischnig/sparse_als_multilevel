@@ -107,7 +107,8 @@ __install_mamba () {
         if [[ "$OSTYPE" == "darwin"* ]]; then
             if [[ ! -f "/opt/homebrew/opt/libomp/lib/libomp.dylib" ]]; then
                 brew install libomp
-            fi [[ ! -f "${__mamba_root_prefix}/lib/libomp.dylib" ]]; then
+            fi
+            if [[ ! -f "${__mamba_root_prefix}/lib/libomp.dylib" ]]; then
                 ln -s /opt/homebrew/opt/libomp/lib/libomp.dylib ${__mamba_root_prefix}/lib/libomp.dylib
             fi
         fi

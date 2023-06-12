@@ -13,6 +13,7 @@ dependencies:
   - tqdm
   - loguru
   - rich
+  - loguru
   - colored
   - ipython
   - flake8
@@ -24,3 +25,4 @@ dependencies:
   - snakeviz
   - pip:
     - deal[all]
+    - sparseqr
