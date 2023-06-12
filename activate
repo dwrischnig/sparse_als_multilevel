@@ -1,4 +1,4 @@
-source setup set_variables
+builtin source setup set_variables
 
 if [ "${#}" -eq "0" -o "${#}" -eq "1" -a "${1}" = "${__mamba_root_prefix}" ]; then
     if [ -f ${__base}/micromamba ] && [ -d ${__base}/.micromamba ]; then
