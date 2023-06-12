@@ -5,3 +5,5 @@ __pycache__
 micromamba
 .micromamba
 .micromambarc
+*.png
+.DS_Store
