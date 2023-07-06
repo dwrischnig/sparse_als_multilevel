@@ -572,7 +572,9 @@ class SemiSparseALS(object):
         # TODO: Check that these operators provide the API defined by sps.linalg.LinearOperator
         #       and that lasso_lars_cv works for all these operators.
         cv = 10
-        max_features = self.__components[k].nnz + 1
+        # max_features = 2 * (self.__components[k].nnz + 1)  # NOTE This severely worsens the performance.
+        # TODO One could try an increasing sequence for max_features that depends on the number of stagnations.
+        max_features = None
         model = lasso_lars_cv(operator, self.values[set], cv=cv, max_features=max_features)
         assert model.alpha_ >= 0
         assert len(model.active_) > 0
