@@ -2,7 +2,7 @@ from typing import cast
 
 import numpy as np
 
-from .problem import PositiveInt, FloatArray, Problem
+from problem import PositiveInt, FloatArray, Problem
 
 
 class BoreholeProblem(Problem):
@@ -64,3 +64,31 @@ class BoreholeProblem(Problem):
         values = borehole(points)
         assert points.shape == (size - offset, self.order) and values.shape == (size - offset,)
         return points, values.reshape(size - offset, 1)
+
+
+if __name__ == "__main__":
+    import argparse, json
+    from pathlib import Path
+
+    parameters = {
+        "problem": {"name": "borehole"},
+        "sampling": {"distribution": "uniform"},
+        "learning": {"distribution": "uniform"},
+    }
+
+    descr = """Sample solutions for the given problem."""
+    parser = argparse.ArgumentParser(description=descr)
+    parser.add_argument("SAMPLES", type=int, help="the number of samples to compute")
+    args = parser.parse_args()
+
+    problem = BoreholeProblem({})
+    points, values = problem.compute_sample(0, args.SAMPLES, 0)
+    values = values[:, 0]
+
+    path = Path(__file__).parent / "borehole"
+    path.mkdir(exist_ok=True)
+    with open(path / "parameters.json", "w") as f:
+        json.dump(parameters, f, indent=4)
+    data_path = path / "data"
+    data_path.mkdir(exist_ok=True)
+    np.savez_compressed(data_path / "functional_identity.npz", samples=points, values=values)
