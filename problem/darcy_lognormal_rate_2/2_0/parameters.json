@@ -16,5 +16,9 @@
         "distribution": "normal",
         "variance": 2.0,
         "strategy": "sobol"
+    },
+    "learning": {
+        "distribution": "normal",
+        "variance": 1.0
     }
 }

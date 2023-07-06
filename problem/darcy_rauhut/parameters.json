@@ -14,5 +14,8 @@
     "sampling": {
         "distribution": "uniform",
         "strategy": "random"
+    },
+    "learning": {
+        "distribution": "uniform"
     }
 }
