@@ -22,8 +22,8 @@ warnings.filterwarnings(action="ignore", category=ConvergenceWarning, module="la
 
 
 class SparseALS(object):
-    @deal.ensure(lambda self, *args, result: self.has_consistent_components())
-    @deal.ensure(lambda self, *args, result: self.has_consistent_stacks())
+    @deal.ensure(lambda self, *args, **kwargs: self.has_consistent_components())
+    @deal.ensure(lambda self, *args, **kwargs: self.has_consistent_stacks())
     def __init__(
         self,
         measures: list[FloatArray],
@@ -32,8 +32,10 @@ class SparseALS(object):
         weight_sequences: list[FloatArray],
         components: list[FloatArray] | None = None,
         corePosition: NonNegativeInt | None = None,
+        perform_checks: bool = True,
     ):
         self.__initialised = False
+        self.perform_checks = perform_checks
         self.measures = measures
         for measure in self.measures:
             measure *= (weights ** (0.5 / len(measures)))[:, None]
@@ -134,7 +136,7 @@ class SparseALS(object):
         assert self.weight_sequence_sharpness.shape == (sample_size,)
         # Since this has to hold for every i, ...
         self.weight_sequence_sharpness = np.max(self.weight_sequence_sharpness)
-        if self.weight_sequence_sharpness > 1 + 1e-3:
+        if self.perform_checks and self.weight_sequence_sharpness > 1 + 1e-3:
             raise ValueError("'weight_sequences' must be larger than the sup norm of the basis functions")
         self.__weight_sequences = weight_sequences
 

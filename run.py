@@ -277,7 +277,7 @@ if args.algorithm in ["sals", "ssals"]:
                 continue
         logger.info(f"Computing '{fileName}'")
 
-        sparseALS = ALS(measures, values, weights, weight_sequence)
+        sparseALS = ALS(measures, values, weights, weight_sequence, perform_checks=True)
         print_parameters(sparseALS)
         logger.info(f"Trial: {trial+1:>{len(str(args.trialSize))}d} / {args.trialSize}")
         start = args.testSetSize + trial * args.trainingSetSize
