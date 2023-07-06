@@ -225,6 +225,8 @@ def create_table(title, rows, columns, values, fig=None, ax=None):
 
 
 if __name__ == "__main__":
+    import os
+    import argparse
     from operator import attrgetter
     from pathlib import Path
 
@@ -248,20 +250,19 @@ if __name__ == "__main__":
             columns[idx] = f"$n = {columns[idx]}$"
         return rows, columns, values
 
-    data_path = Path(__file__).parent.absolute() / ".cache"
-    figure_path = Path(__file__).parent.absolute() / "figures"
-    figure_path.mkdir(mode=0o777, parents=False, exist_ok=True)
-    pattern = "{problem}_{algorithm}_t{training_set_size}_s{test_set_size}_z{trial_size}-{trial}.npz"
+    descr = """Plot table for the given experiment."""
+    parser = argparse.ArgumentParser(description=descr)
+    parser.add_argument("DATA", type=str, help="path to the data")
+    args = parser.parse_args()
 
-    # problem = "darcy_lognormal_1_5"
-    problem = "darcy_lognormal_2_0"
-    # problem = "darcy_lognormal_3_0"
-    # problem = "darcy_rauhut"
+    data_path = Path(args.DATA)
+    pattern = "{problem}/{qoi}_d{dimension}_s{test_set_size}/{algorithm}_t{training_set_size}/{trial}.npz"
+
+    if not data_path.is_dir():
+        raise IOError(f"'{args.DATA}' is not a directory")
 
     experiments = load_experiments(data_path, pattern)
     assert len(experiments) > 0, "No experiments found."
-    experiments = [e for e in experiments if e.problem == problem]
-    assert len(experiments) > 0, f"No experiments found for problem '{problem}'."
 
     rows, columns, values = rename(
         *extract_data(
@@ -274,10 +275,8 @@ if __name__ == "__main__":
     assert len(rows) > 0 and len(columns) > 0
 
     fig, ax = plt.subplots(figsize=(15, 4), dpi=300)
-    create_table("Uniform Darcy (relative error — 5% and 95% quantiles)", rows, columns, values, fig, ax)
-    plt.savefig(
-        figure_path / f"table_{problem}-error.png", dpi=300, edgecolor="none", bbox_inches="tight", transparent=True
-    )
+    create_table("Relative error (5% and 95% quantiles)", rows, columns, values, fig, ax)
+    plt.savefig(data_path / f"error_table.png", dpi=300, edgecolor="none", bbox_inches="tight", transparent=True)
 
     rows, columns, values = rename(
         *extract_data(
@@ -289,10 +288,8 @@ if __name__ == "__main__":
     )
 
     fig, ax = plt.subplots(figsize=(15, 4), dpi=300)
-    create_table("Uniform Darcy (running times — 5% and 95% quantiles)", rows, columns, values, fig, ax)
-    plt.savefig(
-        figure_path / f"table_{problem}-time.png", dpi=300, edgecolor="none", bbox_inches="tight", transparent=True
-    )
+    create_table("Running times (5% and 95% quantiles)", rows, columns, values, fig, ax)
+    plt.savefig(data_path / f"time_table.png", dpi=300, edgecolor="none", bbox_inches="tight", transparent=True)
 
     rows, columns, values = rename(
         *extract_data(
@@ -304,11 +301,5 @@ if __name__ == "__main__":
     )
 
     fig, ax = plt.subplots(figsize=(15, 4), dpi=300)
-    create_table("Uniform Darcy (parameters — 5% and 95% quantiles)", rows, columns, values, fig, ax)
-    plt.savefig(
-        figure_path / f"table_{problem}-parameters.png",
-        dpi=300,
-        edgecolor="none",
-        bbox_inches="tight",
-        transparent=True,
-    )
+    create_table("Parameters (5% and 95% quantiles)", rows, columns, values, fig, ax)
+    plt.savefig(data_path / f"parameter_table.png", dpi=300, edgecolor="none", bbox_inches="tight", transparent=True)

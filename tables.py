@@ -19,10 +19,11 @@ FloatArray = NDArray[np.floating]
 @dataclass
 class Experiment:
     problem: str
+    qoi: str
+    dimension: int
     algorithm: str
     training_set_size: int
     test_set_size: int
-    trial_size: int
     trial: int
     dofs: IntArray
     test_set_errors: FloatArray
@@ -45,9 +46,9 @@ def load_experiments(data_path: str | Path, pattern: str) -> list[Experiment]:
     field_types = {field.name: field.type for field in fields(Experiment)}
     experiments = []
     data_path = Path(data_path)
-    for path in data_path.glob("*.npz"):
+    for path in data_path.glob("**/*.npz"):
         try:
-            parameters = string_to_dict(path.name, pattern)
+            parameters = string_to_dict(str(path), pattern)
             for key in parameters:
                 parameters[key] = field_types[key](parameters[key])
         except (AttributeError, ValueError):

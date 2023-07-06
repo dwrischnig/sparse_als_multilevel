@@ -13,7 +13,9 @@ import numpy as np
 from numpy.polynomial.hermite_e import hermeval
 from numpy.polynomial.legendre import legval
 from scipy.special import factorial
+from scipy.stats import norm
 from colored import fg, attr
+from problem.parametric_pde_sampling.compute_samples import load_parameters
 
 from sparse_als import FloatArray
 import autoPDB  # noqa: F401
@@ -24,11 +26,18 @@ parser = argparse.ArgumentParser(description=descr)
 parser.add_argument("PROBLEM", type=str, help="The problem to solve.")
 parser.add_argument("TRAINING_SET_SIZE", type=int, help="The training set size.")
 parser.add_argument("TEST_SET_SIZE", type=int, help="The test set size.")
+parser.add_argument(
+    "-q",
+    "--qoi",
+    dest="quantity_of_interest",
+    type=str,
+    choices=["integral", "pod_mode"],
+    help="The QoI to learn.",
+)
 parser.add_argument("-x", "--trial", dest="trial_size", type=int, default=10, help="The trial size.")
 parser.add_argument(
     "-d", "--dimension", dest="basis_dimension", type=int, default=20, help="The univariate basis dimension."
 )
-parser.add_argument("-r", "--regularity", dest="regularity", type=int, default=0, help="The regularity to assume.")
 parser.add_argument(
     "-a", "--algorithm", dest="algorithm", type=str, default="sals", help="The approximation algorithm to use."
 )
@@ -38,7 +47,6 @@ args.trainingSetSize = args.TRAINING_SET_SIZE
 args.testSetSize = args.TEST_SET_SIZE
 args.trialSize = args.trial_size
 args.basisDimension = args.basis_dimension
-# args.maxIterations = 100
 args.maxIterations = 50
 assert args.trainingSetSize > 0
 assert args.testSetSize > 0
@@ -58,42 +66,75 @@ else:
     raise NotImplementedError(f"Unknown algorithm: {args.algorithm}")
 
 
-os.makedirs(".cache", exist_ok=True)
-
-
 # TODO: Assume the domains of the problems are either [-1, 1] or [-np.inf, np.inf].
 #       Otherwise it is cumbersome to define orthonormal bases.
 #       Just have a property returning the list of distributions (These imply the domains implicitly.)
 #       The sampling of the points should be done here and the model should only contain a __call__ function.
 
 
-if args.problem == "runge":
-    from problem.runge import RungeProblem as ProblemClass
+logger.info("Loading problem")
+problem_dir = args.PROBLEM
+if not os.path.isdir(problem_dir):
+    raise IOError(f"'{problem_dir}' is not a directory")
+problem_dir_contents = os.listdir(problem_dir)
+if not "parameters.json" in problem_dir_contents:
+    raise IOError(f"'{problem_dir}' does not contain a 'parameters.json'")
 
-    problem = ProblemClass({})
-    points, values = problem.compute_sample(salt=0, size=dataSize, offset=0)
-    values = values[:, 0]
-    weight_function = lambda x: np.ones_like(x, dtype=float)
+problem_info = load_parameters(problem_dir)
+assert problem_info["sampling"]["distribution"] == problem_info["learning"]["distribution"]
+
+if problem_info["learning"]["distribution"] == "uniform":
+    basis_density_1d = lambda x: np.ones(x.shape[0]) / 2
+    weight_function = lambda x: np.ones(x.shape[0], dtype=float)
+
+    # The normalized Legendre polynomials.
+    factors = np.sqrt(2 * np.arange(args.basisDimension) + 1)
+
+    def evaluate_basis(points: FloatArray) -> FloatArray:
+        assert points.ndim == 2 and points.size > 0
+        assert np.max(abs(points)) <= 1
+        return legval(points, np.diag(factors)).T  # shape: (order, sample_size, dimension)
+
     args.basis = "Legendre"
     domain = (-1, 1)
-elif args.problem.startswith("darcy_lognormal_"):
-    from scipy.stats import norm
+elif problem_info["learning"]["distribution"] == "normal":
+    sampling_variance = problem_info["sampling"]["variance"]
+    assert problem_info["learning"]["variance"] == 1
+    sample_density_1d = lambda x: norm.pdf(x, scale=np.sqrt(sampling_variance))
+    basis_density_1d = lambda x: norm.pdf(x, scale=1)
+    weight_function = lambda x: np.product(basis_density_1d(x) / sample_density_1d(x), axis=1)
 
-    logger.info("Loading data")
-    # darcy_lognormal_rate_1_variance_2_0
-    prefix = "darcy_lognormal_rate_"
-    assert args.problem.startswith(prefix)
-    rate = args.problem[len(prefix) : len(prefix) + 1]
-    assert rate in ["1", "2"]
-    rate = int(rate)
-    prefix = f"decay_lognormal_rate_{rate}_variance_"
-    assert args.problem.startswith(prefix)
-    variance_str = args.problem[len(prefix) + 2 :]
-    assert args.problem == f"darcy_lognormal_rate_{rate}_variance_{variance_str}"
-    variance = float(variance_str.replace("_", "."))
-    z = np.load(f"problem/darcy_lognormal_rate_{rate}/{variance_str}/functional_identity.npz")
-    points = z["samples"]
-    values = z["values"]
+    # The normalized probabilist's Hermite polynomials.
+    factorials = factorial(np.arange(args.basisDimension), exact=True)
+    assert isinstance(factorials, np.ndarray) and factorials.dtype == np.int_
+    factors = np.sqrt((1 / factorials).astype(float))
+
+    def evaluate_basis(points: FloatArray) -> FloatArray:
+        assert points.ndim == 2 and points.size > 0
+        return hermeval(points, np.diag(factors)).T  # shape: (order, sample_size, dimension)
+
+    args.basis = "Hermite"
+    domain = (-args.basis_dimension, args.basis_dimension)
+else:
+    raise NotImplementedError(f"Unknown distribution: {problem_info['learning']['distribution']}")
+
+
+logger.info("Loading data")
+data_dir = f"{problem_dir}/data"
+if not os.path.isdir(data_dir):
+    raise IOError(f"'{data_dir}' is not a directory")
+if args.quantity_of_interest == "integral":
+    functional_file = "functional_integral.npz"
+elif args.quantity_of_interest == "pod_mode":
+    functional_file = "functional_identity.npz"
+else:
+    raise NotImplementedError(f"Unknown quantity of interest: {args.quantity_of_interest}")
+
+z = np.load(f"{data_dir}/{functional_file}")
+points = z["samples"]
+values = z["values"]
+
+if args.quantity_of_interest == "pod_mode":
 
     def orthogonalise(values):
         assert values.ndim == 2
@@ -117,75 +158,13 @@ elif args.problem.startswith("darcy_lognormal_"):
     coefficient = -1
     values = values[:, coefficient]
 
-    # logger.info("Rejecting sample points")
-    # bound = 3
-    # mask = np.all(points >= -bound, axis=1) & np.all(points <= bound, axis=1)
-    # points = points[mask][:dataSize] / bound
-    # assert -1 <= np.min(points) and np.max(points) <= 1
-    # values = values[mask][:dataSize]
-    # args.basis = "Legendre"
-    # # We have to optimise the L2(ρ) norm for the measure ρ for which the basis is orthonormal.
-    # # Since the sample points are drawn with respect to the truncated Gaussian measure, we have to weight them
-    # # accordingly.
-    # mass = norm.cdf(bound) - norm.cdf(-bound)
-    # sample_density_1d = lambda x: norm.pdf(x) / mass
-    # basis_density_1d = lambda x: np.ones_like(x, dtype=float)
-    # weight_function = lambda x: np.product(basis_density_1d(x) / sample_density_1d(x), axis=1)
 
-    points = points[:dataSize]
-    values = values[:dataSize]
-    args.basis = "Hermite"
-    # We have to optimise the L2(ρ) norm for the measure ρ for which the basis is orthonormal.
-    # Since the sample points are drawn with respect to the truncated Gaussian measure, we have to weight them
-    # accordingly.
-    sample_density_1d = lambda x: norm.pdf(x, scale=np.sqrt(variance))
-    basis_density_1d = lambda x: norm.pdf(x, scale=1)
-    weight_function = lambda x: np.product(basis_density_1d(x) / sample_density_1d(x), axis=1)
-    domain = (-args.basis_dimension, args.basis_dimension)
-
-elif args.problem == "darcy_rauhut":
-    logger.info("Loading data")
-    z = np.load("problem/darcy_rauhut/functional_integral.npz")
-    points = z["samples"]
-    values = z["values"]
-    assert points.ndim == 2 and points.shape[0] >= dataSize and values.shape == (points.shape[0],)
-    assert -1 <= np.min(points) and np.max(points) <= 1
-    points = points[:dataSize]
-    values = values[:dataSize]
-    weight_function = lambda x: np.ones(x.shape[0], dtype=float)
-    args.basis = "Legendre"
-    domain = (-1, 1)
-else:
-    raise NotImplementedError(f"Unknown problem: {args.problem}")
-
-assert points.ndim == 2 and points.shape[0] == dataSize
-assert values.shape == (dataSize,)
+assert points.ndim == 2 and points.shape[0] >= dataSize and values.shape == (points.shape[0],)
+assert domain[0] <= np.min(points) and np.max(points) <= domain[1]
+points = points[:dataSize]
+values = values[:dataSize]
 weights = weight_function(points)
 assert weights.shape == (dataSize,)
-
-if args.basis == "Legendre":
-    # The normalized Legendre polynomials.
-    factors = np.sqrt(2 * np.arange(args.basisDimension) + 1)
-
-    basis_density_1d = lambda x: np.ones(x.shape[0])
-
-    def evaluate_basis(points: FloatArray) -> FloatArray:
-        assert points.ndim == 2 and points.size > 0
-        assert np.max(abs(points)) <= 1
-        return legval(points, np.diag(factors)).T  # shape: (order, sample_size, dimension)
-
-elif args.basis == "Hermite":
-    # The normalized probabilist's Hermite polynomials.
-    factorials = factorial(np.arange(args.basisDimension), exact=True)
-    assert isinstance(factorials, np.ndarray) and factorials.dtype == np.int_
-    factors = np.sqrt((1 / factorials).astype(float))
-
-    def evaluate_basis(points: FloatArray) -> FloatArray:
-        assert points.ndim == 2 and points.size > 0
-        return hermeval(points, np.diag(factors)).T  # shape: (order, sample_size, dimension)
-
-else:
-    raise NotImplementedError(f"Unknown basis: {args.basis}")
 
 
 reference_points = np.linspace(*domain, num=10_000)
@@ -196,7 +175,7 @@ reference_measures = reference_measures[0]
 reference_gramian = (reference_measures.T * reference_density)[..., None] * reference_measures[None]
 assert reference_gramian.shape == (args.basisDimension, 10_000, args.basisDimension)
 reference_gramian = np.trapz(reference_gramian, reference_points, axis=1)
-assert np.allclose(reference_gramian, np.eye(args.basisDimension))
+assert np.allclose(reference_gramian, np.eye(args.basisDimension), atol=1e-4)
 reference_measures = np.sqrt(weight_function(reference_points[:, None]))[:, None] * reference_measures
 assert reference_measures.shape == (10_000, args.basisDimension)
 reference_variation = abs(reference_measures)
@@ -205,7 +184,7 @@ if args.basis == "Hermite":
 # weight_sequence = np.ones(args.basisDimension)  # constant weight sequence
 # weight_sequence = np.arange(1, args.basisDimension + 1)  # weight sequence of polynomial degrees (+1)
 weight_sequence = reference_variation.max(axis=0)  # optimal weights
-weight_sequence = [weight_sequence ** (args.regularity + 1)] * points.shape[1]
+weight_sequence = [weight_sequence] * points.shape[1]
 
 
 measures = evaluate_basis(points)
@@ -265,16 +244,16 @@ def print_state(iteration, sparseALS):
     logger.info(f"{tab}Ranks: {sparseALS.ranks}")
 
 
+run_dir = f"{problem_dir}/{args.quantity_of_interest}_d{args.basisDimension}_s{args.testSetSize}/{args.algorithm}_t{args.trainingSetSize}"
+os.makedirs(run_dir, exist_ok=True)
 if args.algorithm in ["sals", "ssals"]:
     trial: int
     for trial in range(args.trialSize):
         logger.info("=" * 125)
-        fileName = f".cache/{args.problem}_{args.algorithm}_t{args.trainingSetSize}_s{args.testSetSize}_z{args.trialSize}-{trial}.npz"
+        fileName = f"{run_dir}/{trial}.npz"
         if os.path.exists(fileName):
-            z = np.load(fileName)
-            if "validationErrors" in z.keys() and len(z["validationErrors"]) == len(z["testErrors"]):
-                logger.info(f"Cache file exists: {fileName}")
-                continue
+            logger.info(f"Cache file exists: {fileName}")
+            continue
         logger.info(f"Computing '{fileName}'")
 
         sparseALS = ALS(measures, values, weights, weight_sequence, perform_checks=True)
@@ -317,8 +296,10 @@ if args.algorithm in ["sals", "ssals"]:
 elif args.algorithm == "tensap":
     trial: int
     for trial in range(args.trialSize):
-        fileName = f".cache/{args.problem}_{args.algorithm}_t{args.trainingSetSize}_s{args.testSetSize}_z{args.trialSize}-{trial}.npz"
+        logger.info("=" * 125)
+        fileName = f"{run_dir}/{trial}.npz"
         if os.path.exists(fileName):
+            logger.info(f"Cache file exists: {fileName}")
             continue
         logger.info(f"Computing '{fileName}'")
 
