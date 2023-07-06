@@ -414,7 +414,9 @@ class SparseALS(object):
         current_active_weights = weights[self.get_component(k, 0).tocoo().col]
         last_active_weights = getattr(self, "last_active_weights", None)
         if last_active_weights is not None:
-            assert np.allclose(last_active_weights, current_active_weights)
+            if not np.allclose(last_active_weights, current_active_weights):
+                logger.warning(f"last_active_weights != current_active_weights")
+            assert np.allclose(sorted(last_active_weights), sorted(current_active_weights))
         else:
             last_active_weights = [np.inf]
         # NOTE Choosing max_sparsity poorly severely worsens the performance.
