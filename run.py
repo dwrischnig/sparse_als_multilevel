@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import argparse
 import time
+import json
 
 from loguru import logger
 import numpy as np
@@ -15,7 +16,6 @@ from numpy.polynomial.legendre import legval
 from scipy.special import factorial
 from scipy.stats import norm
 from colored import fg, attr
-from problem.parametric_pde_sampling.compute_samples import load_parameters
 
 from sparse_als import FloatArray
 import autoPDB  # noqa: F401
@@ -66,10 +66,16 @@ else:
     raise NotImplementedError(f"Unknown algorithm: {args.algorithm}")
 
 
-# TODO: Assume the domains of the problems are either [-1, 1] or [-np.inf, np.inf].
-#       Otherwise it is cumbersome to define orthonormal bases.
-#       Just have a property returning the list of distributions (These imply the domains implicitly.)
-#       The sampling of the points should be done here and the model should only contain a __call__ function.
+def load_parameters(problemDir):
+    problemFile = f"{problemDir}/parameters.json"
+    try:
+        with open(problemFile, "r") as f:
+            problemInfo = json.load(f)
+    except FileNotFoundError:
+        raise IOError(f"Can not read file '{problemFile}'")
+    except json.JSONDecodeError:
+        raise IOError(f"'{problemFile}' is not a valid JSON file")
+    return problemInfo
 
 
 logger.info("Loading problem")
