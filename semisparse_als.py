@@ -578,6 +578,10 @@ class SemiSparseALS(object):
         model = lasso_lars_cv(operator, self.values[set], cv=cv, max_features=max_features)
         assert model.alpha_ >= 0
         assert len(model.active_) > 0
+        logger.debug(f"Active coefficients: {len(model.active_)} / {len(weights)}")
+        logger.debug(
+            f"Active weights \u2208 [{np.min(weights[model.active_]):.2e}, {np.max(weights[model.active_]):.2e}]"
+        )
         # assert np.linalg.norm(model.coef_) > 0
         coreData = model.coef_ / weights[model.active_]
         # assert np.linalg.norm(coreData) > 0
