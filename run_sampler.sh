@@ -16,7 +16,7 @@ if [ ${CONTAINER_EXISTS} -ne 0 ]; then
 fi
 
 for RATE in 1 2; do
-    for VARIANCE in 1_5 2_0 3_0; do
+    for VARIANCE in 2_0 4_0; do
         FILE_PATH="darcy_lognormal_rate_${RATE}/${VARIANCE}"
         ${CONTAINER} exec ${NAME} python3 parametric_pde_sampling/compute_samples.py -b 100 ${FILE_PATH} 20000
         ${CONTAINER} exec ${NAME} python3 parametric_pde_sampling/compute_functional.py -f identity ${FILE_PATH}
