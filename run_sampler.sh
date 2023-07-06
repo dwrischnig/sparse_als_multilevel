@@ -1,7 +1,7 @@
 #! /bin/bash
 
-# CONTAINER=docker
-CONTAINER=podman
+CONTAINER=docker
+# CONTAINER=podman
 NAME=run_sampler
 
 ${CONTAINER} start ${NAME} &>/dev/null
@@ -15,9 +15,12 @@ if [ ${CONTAINER_EXISTS} -ne 0 ]; then
     ${CONTAINER} exec ${NAME} pip install --user joblib
 fi
 
-for VARIANCE in 2 5 10; do
-    ${CONTAINER} exec ${NAME} python3 parametric_pde_sampling/compute_samples.py -b 100 darcy_lognormal_${VARIANCE} 20000
-    ${CONTAINER} exec ${NAME} python3 parametric_pde_sampling/compute_functional.py -f identity darcy_lognormal_${VARIANCE}
+for RATE in 1 2; do
+    for VARIANCE in 1_5 2_0 3_0; do
+        FILE_PATH="darcy_lognormal_rate_${RATE}/${VARIANCE}"
+        ${CONTAINER} exec ${NAME} python3 parametric_pde_sampling/compute_samples.py -b 100 ${FILE_PATH} 20000
+        ${CONTAINER} exec ${NAME} python3 parametric_pde_sampling/compute_functional.py -f identity ${FILE_PATH}
+    done
 done
 
 ${CONTAINER} exec ${NAME} python3 parametric_pde_sampling/compute_samples.py -b 100 darcy_rauhut 20000

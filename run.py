@@ -80,8 +80,18 @@ elif args.problem.startswith("darcy_lognormal_"):
     from scipy.stats import norm
 
     logger.info("Loading data")
-    variance = int(args.problem[len("darcy_lognormal_") :])
-    z = np.load(f"problem/darcy_lognormal_{variance}/functional_identity.npz")
+    # darcy_lognormal_rate_1_variance_2_0
+    prefix = "darcy_lognormal_rate_"
+    assert args.problem.startswith(prefix)
+    rate = args.problem[len(prefix) : len(prefix) + 1]
+    assert rate in ["1", "2"]
+    rate = int(rate)
+    prefix = f"decay_lognormal_rate_{rate}_variance_"
+    assert args.problem.startswith(prefix)
+    variance_str = args.problem[len(prefix) + 2 :]
+    assert args.problem == f"darcy_lognormal_rate_{rate}_variance_{variance_str}"
+    variance = float(variance_str.replace("_", "."))
+    z = np.load(f"problem/darcy_lognormal_rate_{rate}/{variance_str}/functional_identity.npz")
     points = z["samples"]
     values = z["values"]
 
