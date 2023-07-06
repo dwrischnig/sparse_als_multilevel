@@ -31,7 +31,7 @@ parser.add_argument(
     "--qoi",
     dest="quantity_of_interest",
     type=str,
-    choices=["integral", "pod_mode"],
+    choices=["integral", "pod_mode", "identity"],
     help="The QoI to learn.",
 )
 parser.add_argument("-x", "--trial", dest="trial_size", type=int, default=10, help="The trial size.")
@@ -131,7 +131,7 @@ if not os.path.isdir(data_dir):
     raise IOError(f"'{data_dir}' is not a directory")
 if args.quantity_of_interest == "integral":
     functional_file = "functional_integral.npz"
-elif args.quantity_of_interest == "pod_mode":
+elif args.quantity_of_interest in ["pod_mode", "identity"]:
     functional_file = "functional_identity.npz"
 else:
     raise NotImplementedError(f"Unknown quantity of interest: {args.quantity_of_interest}")
