@@ -201,7 +201,7 @@ def create_table(title, rows, columns, values, fig=None, ax=None):
         columns,
         ax=ax,
         cmap=traffic_lights,
-        norm=matplotlib.colors.LogNorm(vmin=heatmap_values.min(), vmax=heatmap_values.max()),
+        norm=matplotlib.colors.LogNorm(vmin=np.nanmin(heatmap_values), vmax=np.nanmax(heatmap_values)),
         aspect=1 / 4,
         fontdict={
             "fontsize": 24,
@@ -233,14 +233,16 @@ if __name__ == "__main__":
 
     def rename(rows: list[str], columns: list[str], values: FloatArray):
         assert values.shape == (len(rows), len(columns), 2)
-        ssals_index = rows.index("ssals")
-        assert ssals_index >= 0
-        rows = rows[:]
-        del rows[ssals_index]
-        values = np.delete(values, ssals_index, axis=0)
-        sals_index = rows.index("sals")
-        assert sals_index >= 0
-        rows[sals_index] = "SALS (ours)"
+        try:
+            ssals_index = rows.index("ssals")
+            rows[ssals_index] = "SSALS (ours)"
+        except ValueError:
+            pass
+        try:
+            sals_index = rows.index("sals")
+            rows[sals_index] = "SALS (ours)"
+        except ValueError:
+            pass
         columns = columns[:]
         for idx in range(len(columns)):
             columns[idx] = f"$n = {columns[idx]}$"
@@ -251,15 +253,15 @@ if __name__ == "__main__":
     figure_path.mkdir(mode=0o777, parents=False, exist_ok=True)
     pattern = "{problem}_{algorithm}_t{training_set_size}_s{test_set_size}_z{trial_size}-{trial}.npz"
 
-    # problem = "darcy_lognormal_2"
-    # problem = "darcy_lognormal_5"
-    # problem = "darcy_lognormal_10"
-    problem = "darcy_rauhut"
-
-    # rename = lambda *args: args
+    # problem = "darcy_lognormal_1_5"
+    problem = "darcy_lognormal_2_0"
+    # problem = "darcy_lognormal_3_0"
+    # problem = "darcy_rauhut"
 
     experiments = load_experiments(data_path, pattern)
+    assert len(experiments) > 0, "No experiments found."
     experiments = [e for e in experiments if e.problem == problem]
+    assert len(experiments) > 0, f"No experiments found for problem '{problem}'."
 
     rows, columns, values = rename(
         *extract_data(
@@ -269,6 +271,7 @@ if __name__ == "__main__":
             lambda experiment: experiment.test_set_errors[get_optimal_index(experiment, "validation_set_errors")],
         )
     )
+    assert len(rows) > 0 and len(columns) > 0
 
     fig, ax = plt.subplots(figsize=(15, 4), dpi=300)
     create_table("Uniform Darcy (relative error — 5% and 95% quantiles)", rows, columns, values, fig, ax)

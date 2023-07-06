@@ -123,7 +123,7 @@ def get_optimal_index(experiment: Experiment, criterion: str) -> int:
         assert len(experiment.validation_set_errors) == len(experiment.test_set_errors)
         return np.argmin(getattr(experiment, criterion))
     else:
-        assert experiment.algorithm != "sals"
+        assert experiment.algorithm not in ["sals", "ssals"]
         return -1
 
 
