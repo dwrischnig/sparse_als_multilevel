@@ -268,16 +268,17 @@ def print_state(iteration, sparseALS):
 if args.algorithm in ["sals", "ssals"]:
     trial: int
     for trial in range(args.trialSize):
+        logger.info("=" * 125)
         fileName = f".cache/{args.problem}_{args.algorithm}_t{args.trainingSetSize}_s{args.testSetSize}_z{args.trialSize}-{trial}.npz"
         if os.path.exists(fileName):
             z = np.load(fileName)
             if "validationErrors" in z.keys() and len(z["validationErrors"]) == len(z["testErrors"]):
+                logger.info(f"Cache file exists: {fileName}")
                 continue
         logger.info(f"Computing '{fileName}'")
 
         sparseALS = ALS(measures, values, weights, weight_sequence)
         print_parameters(sparseALS)
-        logger.info("=" * 125)
         logger.info(f"Trial: {trial+1:>{len(str(args.trialSize))}d} / {args.trialSize}")
         start = args.testSetSize + trial * args.trainingSetSize
         trainingSet = slice(start, start + args.trainingSetSize, None)
