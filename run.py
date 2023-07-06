@@ -167,6 +167,8 @@ if args.basis == "Legendre":
     # The normalized Legendre polynomials.
     factors = np.sqrt(2 * np.arange(args.basisDimension) + 1)
 
+    basis_density_1d = lambda x: np.ones(x.shape[0])
+
     def evaluate_basis(points: FloatArray) -> FloatArray:
         assert points.ndim == 2 and points.size > 0
         assert np.max(abs(points)) <= 1
@@ -187,14 +189,23 @@ else:
 
 
 reference_points = np.linspace(*domain, num=10_000)
-reference_measures = np.sqrt(weight_function(reference_points[:, None]))[None, :, None] * evaluate_basis(
-    reference_points[:, None]
-)
+reference_density = basis_density_1d(reference_points)
+reference_measures = evaluate_basis(reference_points[:, None])
 assert reference_measures.shape == (1, 10_000, args.basisDimension)
-reference_variation = abs(reference_measures[0])
+reference_measures = reference_measures[0]
+reference_gramian = (reference_measures.T * reference_density)[..., None] * reference_measures[None]
+assert reference_gramian.shape == (args.basisDimension, 10_000, args.basisDimension)
+reference_gramian = np.trapz(reference_gramian, reference_points, axis=1)
+assert np.allclose(reference_gramian, np.eye(args.basisDimension))
+reference_measures = np.sqrt(weight_function(reference_points[:, None]))[:, None] * reference_measures
+assert reference_measures.shape == (10_000, args.basisDimension)
+reference_variation = abs(reference_measures)
 if args.basis == "Hermite":
     assert np.all(0 < np.argmax(reference_variation, axis=0)) and np.all(np.argmax(reference_variation, axis=0) < 9_999)
-weight_sequence = [reference_variation.max(axis=0) ** (args.regularity + 1)] * points.shape[1]
+# weight_sequence = np.ones(args.basisDimension)  # constant weight sequence
+# weight_sequence = np.arange(1, args.basisDimension + 1)  # weight sequence of polynomial degrees (+1)
+weight_sequence = reference_variation.max(axis=0)  # optimal weights
+weight_sequence = [weight_sequence ** (args.regularity + 1)] * points.shape[1]
 
 
 measures = evaluate_basis(points)
