@@ -72,8 +72,8 @@ def deflated_sparse_qc_kron(
     A tuple (Q, P, C, w) where
         - Q (sps.spmatrix, QPM): Overcomplete generating system of the range of `matrix`.
         - P (sps.spmatrix): Basis of the range.
-        - C (sps.spmatrix): Matrix such that `Q @ C == matrix`.
-        - w (FloatArray): Subspace weights `diag(w) == Q.T @ diag(weights) @ Q`.
+        - C (sps.spmatrix): Matrix such that `Q @ P @ C == matrix`.
+        - w (FloatArray): Subspace weights `diag(w) == P.T @ Q.T @ diag(weights) @ Q @ P`.
     """
     logger.debug("Compute sparse ")
     assert matrix.ndim == 2
@@ -117,6 +117,8 @@ def deflated_sparse_qc_kron(
     y = y.toarray()
     es, q3 = np.linalg.eigh(y)
     assert np.allclose(q3 * es @ q3.T, y)
+    assert q3.shape[0] == q3.shape[1]
+    assert np.allclose(q3.T @ q3, np.eye(q3.shape[0]))
     c3 = q3.T @ c2
     q3[abs(q3) < precision] = 0
     c3[abs(c3) < precision] = 0
@@ -467,13 +469,22 @@ class SemiSparseALS(object):
             Q, P, C, weights = deflated_sparse_qc_kron(
                 oldCore.T, left_weights=self.weight_sequences[k], right_weights=self.__weightStack[k + 1]
             )
-            # The returned values satisfy:
-            #     - Q @ C == oldCore.T
-            #         <-->  oldCore = C.T @ Qt  where  Qt = Q.T  ✓
-            #     - diag(weights) == Q.T @ kron(diag(weight_sequences[k]), diag(weightStack[k + 1])) @ Q
-            #         <-->  einsum("ldr, d, r, Ldr -> lL", Qt, weight_sequences[k], weightStack[k + 1], Qt)
-            #               == diag(weights)  ✓
-            #               (l and L denote the internal rank index of Qt.)
+            if __debug__:
+                assert np.all(np.isfinite(Q.data))
+                assert np.all(np.isfinite(P.data))
+                assert np.all(np.isfinite(C.data))
+                assert np.all(np.isfinite(weights))
+                assert np.allclose((Q.T @ Q - sps.eye(Q.shape[1])).data, 0)
+                assert np.allclose((P.T @ P - sps.eye(P.shape[1])).data, 0)
+                assert np.allclose((Q @ P @ C - oldCore.T).data, 0)
+                diag_weights = sps.kron(
+                    sps.diags([self.weight_sequences[k]], [0]), sps.diags([self.__weightStack[k + 1]], [0])
+                )
+                diag_weights = (Q.T @ diag_weights @ Q).tocsr()
+                diag_weights.eliminate_zeros()
+                assert np.all(diag_weights.todia().offsets == [0])
+                diag_weights = P.T @ diag_weights @ P
+                assert np.allclose((diag_weights - sps.diags([weights], [0])).data, 0)
             QP = Q @ P
             newMiddleRank = QP.shape[1]
             assert QP.T.shape == (newMiddleRank, rightDimension * rightRank)
@@ -508,12 +519,22 @@ class SemiSparseALS(object):
             Q, P, C, weights = deflated_sparse_qc_kron(
                 oldCore, left_weights=self.__weightStack[k - 1], right_weights=self.weight_sequences[k]
             )
-            # The returned values satisfy:
-            #     - Q @ C == oldCore  ✓
-            #     - diag(weights) == Q.T @ kron(diag(weightStack[k - 1]), diag(weight_sequences[k])) @ Q
-            #         <-->  einsum("ldr, l, d, ldR -> rR", Q, weightStack[k - 1], weight_sequences[k], Q)
-            #               == diag(weights)  ✓
-            #               (r and R denote the internal rank index of Q.)
+            if __debug__:
+                assert np.all(np.isfinite(Q.data))
+                assert np.all(np.isfinite(P.data))
+                assert np.all(np.isfinite(C.data))
+                assert np.all(np.isfinite(weights))
+                assert np.allclose((Q.T @ Q - sps.eye(Q.shape[1])).data, 0)
+                assert np.allclose((P.T @ P - sps.eye(P.shape[1])).data, 0)
+                assert np.allclose((Q @ P @ C - oldCore).data, 0)
+                diag_weights = sps.kron(
+                    sps.diags([self.__weightStack[k - 1]], [0]), sps.diags([self.weight_sequences[k]], [0])
+                )
+                diag_weights = (Q.T @ diag_weights @ Q).tocsr()
+                diag_weights.eliminate_zeros()
+                assert np.all(diag_weights.todia().offsets == [0])
+                diag_weights = P.T @ diag_weights @ P
+                assert np.allclose((diag_weights - sps.diags([weights], [0])).data, 0)
             QP = Q @ P
             newMiddleRank = QP.shape[1]
             assert QP.shape == (leftRank * leftDimension, newMiddleRank)
