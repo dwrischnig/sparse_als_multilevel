@@ -411,13 +411,19 @@ class SparseALS(object):
         # Restrict the optimisation to those indices for which the (squared) weights are smaller than the current weighted sparsity.
         assert self.get_component(k, 0).ndim == 2 and self.get_component(k, 0).shape[0] == 1
         assert np.all(self.get_component(k, 0).tocoo().row == 0)
-        # max_sparsity = np.sum(weights[self.get_component(k, 0).tocoo().col] ** 2) ** 2
-        max_sparsity = np.inf
-        logger.debug(f"Maximum sparsity: {max_sparsity:.2e}")
-        active_coefficients = np.nonzero(weights**2 <= max_sparsity)[0]
-        # print(weights.shape)
-        # print(weights)
-        logger.debug(f"Active coefficients: {len(active_coefficients)}")
+        current_active_weights = weights[self.get_component(k, 0).tocoo().col]
+        last_active_weights = getattr(self, "last_active_weights", None)
+        if last_active_weights is not None:
+            assert np.allclose(last_active_weights, current_active_weights)
+        else:
+            last_active_weights = [np.inf]
+        # NOTE Choosing max_sparsity poorly severely worsens the performance.
+        max_sparsity = 10 * np.max(last_active_weights)
+        # max_sparsity = np.inf
+        logger.debug(f"Weight threshold: {max_sparsity:.2e}")
+        assert weights.ndim == 1
+        active_coefficients = np.nonzero(weights <= max_sparsity)[0]
+        logger.debug(f"Activatable coefficients: {len(active_coefficients)} / {len(weights)}")
         coreSize = len(weights)
         assert self.get_component(k, 0).shape == (1, coreSize)
         weights = weights[active_coefficients]
@@ -450,6 +456,7 @@ class SparseALS(object):
         self.set_component(position=k, component=core, shape=(lOp.shape[1], eOp.shape[1], rOp.shape[1]))
         self.regularisationParameters[k] = model.alpha_
         self.componentDensities[k] = len(model.active_) / coreSize
+        self.last_active_weights = weights[model.active_]
         return model.cv_error_
 
     def step(self, set: slice = slice(None)) -> float:
