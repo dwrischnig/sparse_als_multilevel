@@ -141,6 +141,7 @@ points = z["samples"]
 values = z["values"]
 
 if args.quantity_of_interest == "pod_mode":
+    assert values.ndim == 2
 
     def orthogonalise(values):
         assert values.ndim == 2
@@ -258,8 +259,14 @@ if args.algorithm in ["sals", "ssals"]:
         logger.info("=" * 125)
         fileName = f"{run_dir}/{trial}.npz"
         if os.path.exists(fileName):
-            logger.info(f"Cache file exists: {fileName}")
-            continue
+            z = np.load(fileName)
+            if len(z["times"]) == args.maxIterations + 1:
+                logger.info(f"Cache file exists: {fileName}")
+                continue
+            else:
+                logger.info(
+                    f"Cache file exists: {fileName} but contains incomplete data: {len(z['times'])} / {args.maxIterations + 1}"
+                )
         logger.info(f"Computing '{fileName}'")
 
         sparseALS = ALS(measures, values, weights, weight_sequence, perform_checks=True)
@@ -286,17 +293,20 @@ if args.algorithm in ["sals", "ssals"]:
             validationErrors.append(validationError)
             testErrors.append(sparseALS.residual(testSet))
             dofs.append(sparseALS.parameters)
+            np.savez_compressed(
+                fileName,
+                times=times,
+                trainingErrors=trainingErrors,
+                validationErrors=validationErrors,
+                testErrors=testErrors,
+                dofs=dofs,
+            )
             if iteration - np.argmin(trainingErrors) - 1 > 3:
+                logger.warning(f"Terminating: training errors stagnated for over 3 iterations")
                 break
-
-        np.savez_compressed(
-            fileName,
-            times=times,
-            trainingErrors=trainingErrors,
-            validationErrors=validationErrors,
-            testErrors=testErrors,
-            dofs=dofs,
-        )
+            if times[-1] - times[-2] > 60:
+                logger.warning(f"Terminating: previous iteration took longer than 60 seconds")
+                break
     logger.info("=" * 125)
 
 elif args.algorithm == "tensap":
