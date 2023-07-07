@@ -259,14 +259,11 @@ if args.algorithm in ["sals", "ssals"]:
         logger.info("=" * 125)
         fileName = f"{run_dir}/{trial}.npz"
         if os.path.exists(fileName):
+            logger.info(f"Cache file exists: {fileName}")
             z = np.load(fileName)
-            if len(z["times"]) == args.maxIterations + 1:
-                logger.info(f"Cache file exists: {fileName}")
-                continue
-            else:
-                logger.info(
-                    f"Cache file exists: {fileName} but contains incomplete data: {len(z['times'])} / {args.maxIterations + 1}"
-                )
+            if len(z["times"]) < args.maxIterations + 1:
+                logger.warning(f"Cache file contains incomplete data: {len(z['times'])} / {args.maxIterations + 1}")
+            continue
         logger.info(f"Computing '{fileName}'")
 
         sparseALS = ALS(measures, values, weights, weight_sequence, perform_checks=True)
